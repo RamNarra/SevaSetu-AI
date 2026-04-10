@@ -24,28 +24,28 @@
 
 ## Credentials
 
-`.env.local` (gitignored, real values):
+`.env.local` (gitignored, real values — see `.env.local.example` for structure):
 
 ```env
 # Firebase
-NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyD63xaBWpqyFmaKJI4aV_RTdDvkq3pQ0iw
+NEXT_PUBLIC_FIREBASE_API_KEY=<your-firebase-api-key>
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=sevasetu-ai.firebaseapp.com
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=sevasetu-ai
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=sevasetu-ai.firebasestorage.app
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=152831472198
-NEXT_PUBLIC_FIREBASE_APP_ID=1:152831472198:web:e7aa36cf9eabbb6a295047
-NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=G-Q165EJ00RB
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=<your-sender-id>
+NEXT_PUBLIC_FIREBASE_APP_ID=<your-app-id>
+NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=<your-measurement-id>
 
 # Google Maps
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=AIzaSyD-kt4Rc2lljPdyY_sHbm8BTcpZ8N9sBkQ
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=<your-google-maps-api-key>
 
 # Gemini (Developer API — used for local dev)
-GEMINI_API_KEY=AIzaSyD8XQP8fWNZq_uB0kvL4sZ18xs2JKqA2tY
+GEMINI_API_KEY=<your-gemini-api-key>
 
 # Vertex AI (production toggle)
 GOOGLE_CLOUD_PROJECT=sevasetu-ai
 GOOGLE_CLOUD_LOCATION=global
-GOOGLE_GENAI_USE_VERTEXAI=false
+GOOGLE_GENAI_USE_VERTEXAI=true
 ```
 
 > [!NOTE]

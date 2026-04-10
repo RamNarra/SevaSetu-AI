@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { genai, MODEL } from '@/lib/ai/client';
+import { genai, MODEL, parseJsonResponse } from '@/lib/ai/client';
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,12 +31,11 @@ Rank by match score descending. Include ALL available volunteers with scores.`;
     const response = await genai.models.generateContent({
       model: MODEL,
       contents: prompt,
-      config: { temperature: 0.3, maxOutputTokens: 2048 },
+      config: { temperature: 0.3, maxOutputTokens: 4096 },
     });
 
     const text = response.text || '';
-    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const result = JSON.parse(jsonMatch ? jsonMatch[1].trim() : text.trim());
+    const result = parseJsonResponse(text);
 
     return NextResponse.json({ success: true, result });
   } catch (error) {

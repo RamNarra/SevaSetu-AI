@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { genai, MODEL } from '@/lib/ai/client';
+import { genai, MODEL, parseJsonResponse } from '@/lib/ai/client';
 
 const EXTRACTION_PROMPT = `You are an AI assistant for SevaSetu AI, an NGO resource allocation platform for community health camps in India.
 
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       contents: EXTRACTION_PROMPT + text,
       config: {
         temperature: 0.2,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 2048,
       },
     });
 
@@ -46,12 +46,8 @@ export async function POST(request: NextRequest) {
     // Parse JSON from response
     let result;
     try {
-      // Try to extract JSON from markdown code blocks if present
-      const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
-      const jsonStr = jsonMatch ? jsonMatch[1].trim() : responseText.trim();
-      result = JSON.parse(jsonStr);
+      result = parseJsonResponse(responseText);
     } catch {
-      // If JSON parsing fails, return the raw text
       return NextResponse.json({
         success: false,
         error: 'Failed to parse AI response as JSON',
