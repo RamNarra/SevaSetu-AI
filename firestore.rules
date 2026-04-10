@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() { return request.auth != null; }
+    function isCoordinator() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'COORDINATOR';
+    }
+    function isOwner(userId) { return request.auth.uid == userId; }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isCoordinator();
+    }
+
+    match /volunteer_profiles/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isCoordinator());
+    }
+
+    match /community_reports/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isCoordinator();
+    }
+
+    // All other collections: read for authenticated, write for coordinators
+    match /{path=**} {
+      allow read: if isAuthenticated();
+      allow write: if isCoordinator();
+    }
+  }
+}

@@ -1,0 +1,159 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@import "tailwindcss";
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1cdc7;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b0aba3;
+}
+
+/* ---- Base ---- */
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: #FAF9F6;
+  color: #1A1A1A;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- Selection ---- */
+::selection {
+  background-color: rgba(212, 98, 43, 0.15);
+  color: #1A1A1A;
+}
+
+/* ---- Glass Effect ---- */
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.glass-dark {
+  background: rgba(27, 46, 37, 0.9);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* ---- Card Styles ---- */
+.card {
+  background: #FFFFFF;
+  border: 1px solid #E5E2DC;
+  border-radius: 16px;
+  padding: 1.5rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card:hover {
+  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.08), 0 4px 6px -2px rgba(0,0,0,0.04);
+  transform: translateY(-1px);
+}
+
+/* ---- Badge ---- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+  border: 1px solid transparent;
+}
+
+/* ---- Button Base ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  border: none;
+  outline: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #D4622B 0%, #E87A40 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(212, 98, 43, 0.3);
+}
+
+.btn-primary:hover {
+  box-shadow: 0 4px 14px rgba(212, 98, 43, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: #2D6A4F;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #40916C;
+  transform: translateY(-1px);
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1.5px solid #E5E2DC;
+  color: #1A1A1A;
+}
+
+.btn-outline:hover {
+  border-color: #D4622B;
+  color: #D4622B;
+  background: #FEF3EC;
+}
+
+/* ---- Urgency Glow ---- */
+.urgency-critical {
+  box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.2), 0 0 12px rgba(220, 38, 38, 0.1);
+}
+
+.urgency-high {
+  box-shadow: 0 0 0 1px rgba(234, 88, 12, 0.2), 0 0 12px rgba(234, 88, 12, 0.1);
+}
+
+/* ---- Skeleton Loader ---- */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #F0EDE8 25%,
+    #E5E2DC 50%,
+    #F0EDE8 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
