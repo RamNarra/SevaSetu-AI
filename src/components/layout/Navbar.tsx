@@ -3,9 +3,39 @@
 import { Bell, Search } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
+import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+const searchRoutes = [
+  { label: 'Dashboard', path: '/dashboard', keywords: ['home', 'overview', 'stats'] },
+  { label: 'Localities', path: '/localities', keywords: ['locality', 'map', 'urgency', 'heatmap', 'priority'] },
+  { label: 'Field Reports', path: '/reports', keywords: ['report', 'field', 'submit', 'extract'] },
+  { label: 'Camp Planner', path: '/planner', keywords: ['camp', 'plan', 'schedule', 'create'] },
+  { label: 'Allocation', path: '/allocation', keywords: ['volunteer', 'assign', 'allocate', 'match'] },
+  { label: 'Operations', path: '/operations', keywords: ['ops', 'patient', 'queue', 'kanban', 'triage'] },
+  { label: 'Impact', path: '/impact', keywords: ['impact', 'summary', 'analytics', 'medicine', 'follow'] },
+  { label: 'Admin', path: '/admin', keywords: ['admin', 'seed', 'data', 'settings'] },
+];
 
 export default function Navbar() {
   const { user, userDoc } = useAuth();
+  const router = useRouter();
+  const [query, setQuery] = useState('');
+  const [showResults, setShowResults] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const results = query.trim().length > 0
+    ? searchRoutes.filter((r) =>
+        r.label.toLowerCase().includes(query.toLowerCase()) ||
+        r.keywords.some((k) => k.includes(query.toLowerCase()))
+      )
+    : [];
+
+  useEffect(() => {
+    function handleClickOutside() { setShowResults(false); }
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
 
   return (
     <motion.header
@@ -15,13 +45,31 @@ export default function Navbar() {
       className="sticky top-0 z-30 h-16 border-b border-[#E5E2DC] bg-[#FAF9F6]/80 backdrop-blur-xl flex items-center justify-between px-6"
     >
       {/* Search */}
-      <div className="relative max-w-md flex-1">
+      <div className="relative max-w-md flex-1" onClick={(e) => e.stopPropagation()}>
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6B7280]" />
         <input
+          ref={inputRef}
           type="text"
-          placeholder="Search localities, reports, volunteers..."
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setShowResults(true); }}
+          onFocus={() => setShowResults(true)}
+          placeholder="Search pages..."
           className="w-full pl-10 pr-4 py-2 rounded-xl bg-white border border-[#E5E2DC] text-sm text-[#1A1A1A] placeholder-[#6B7280]/60 focus:outline-none focus:ring-2 focus:ring-[#D4622B]/30 focus:border-[#D4622B] transition-all"
         />
+        {showResults && results.length > 0 && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl border border-[#E5E2DC] shadow-lg overflow-hidden z-50">
+            {results.map((r) => (
+              <button
+                key={r.path}
+                onClick={() => { router.push(r.path); setQuery(''); setShowResults(false); }}
+                className="w-full text-left px-4 py-2.5 text-sm hover:bg-[#FAF9F6] transition-colors flex items-center gap-2"
+              >
+                <Search className="w-3.5 h-3.5 text-[#6B7280]" />
+                <span className="text-[#1A1A1A]">{r.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Right side */}
@@ -29,10 +77,10 @@ export default function Navbar() {
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
+          title="Notifications coming soon"
           className="relative p-2 rounded-xl hover:bg-white border border-transparent hover:border-[#E5E2DC] transition-all"
         >
           <Bell className="w-5 h-5 text-[#6B7280]" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#D4622B] rounded-full" />
         </motion.button>
 
         {user && (

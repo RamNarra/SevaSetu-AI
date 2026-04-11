@@ -3,7 +3,15 @@ import { genai, MODEL, parseJsonResponse } from '@/lib/ai/client';
 
 export async function POST(request: NextRequest) {
   try {
-    const { localityName, baseScore, breakdown, reports } = await request.json();
+    const body = await request.json();
+    const { localityName, baseScore, breakdown, reports } = body;
+
+    if (!localityName || typeof localityName !== 'string') {
+      return NextResponse.json({ success: false, error: 'localityName is required' }, { status: 400 });
+    }
+    if (baseScore == null || typeof baseScore !== 'number') {
+      return NextResponse.json({ success: false, error: 'baseScore must be a number' }, { status: 400 });
+    }
 
     const prompt = `You are an urgency scoring AI for SevaSetu AI, an NGO health camp platform.
 

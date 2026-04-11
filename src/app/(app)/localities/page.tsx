@@ -3,10 +3,12 @@ import PageShell from '@/components/layout/PageShell';
 import { MapPin, List, Sparkles, Loader2, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { getCollection } from '@/lib/firebase/firestore';
-import { Locality } from '@/types';
+import { getCollection, updateDocument } from '@/lib/firebase/firestore';
+import { Locality, ExtractedReport } from '@/types';
 import { urgencyBgColor, urgencyColor, formatDate } from '@/lib/utils';
 import { loadMapsLibrary, loadMarkerLibrary, loadVisualizationLibrary } from '@/lib/maps/config';
+import { computeBaseUrgencyScore, scoreToLevel } from '@/lib/scoring/deterministic';
+import toast from 'react-hot-toast';
 
 export default function LocalitiesPage() {
   const [localities, setLocalities] = useState<Locality[]>([]);
@@ -154,26 +156,62 @@ export default function LocalitiesPage() {
   async function handleRescore(loc: Locality) {
     setRescoring(true);
     try {
+      // Step 1: Fetch extracted reports for this locality
+      const allReports = await getCollection<ExtractedReport>('extracted_reports');
+      const localityReports = allReports.filter(
+        (r) => r.locality.toLowerCase() === loc.name.toLowerCase()
+      );
+
+      // Step 2: Compute deterministic base score
+      const { score: baseScore, breakdown } = computeBaseUrgencyScore(localityReports, loc);
+
+      // Step 3: Call AI for adjustment + reasoning
       const response = await fetch('/api/ai/score', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           localityName: loc.name,
-          baseScore: loc.baseScore,
-          breakdown: loc.urgencyBreakdown,
-          reports: loc.issues?.join(', '),
+          baseScore,
+          breakdown,
+          reports: localityReports.map((r) => r.issueTypes.join(', ')).join('; ') || loc.issues?.join(', '),
         }),
       });
       const data = await response.json();
-      if (data.success) {
-        setSelected({
-          ...loc,
-          aiAdjustment: data.result.adjustment,
-          aiReasoning: data.result.reasoning,
+
+      const aiAdj = data.success ? data.result.adjustment : 0;
+      const aiReason = data.success ? data.result.reasoning : 'AI analysis unavailable';
+      const finalScore = Math.min(100, Math.max(0, baseScore + aiAdj));
+
+      // Step 4: Update Firestore
+      if (loc.id) {
+        await updateDocument('localities', loc.id, {
+          baseScore,
+          urgencyBreakdown: breakdown,
+          urgencyScore: finalScore,
+          urgencyLevel: scoreToLevel(finalScore),
+          aiAdjustment: aiAdj,
+          aiReasoning: aiReason,
         });
       }
+
+      // Step 5: Update local state
+      const updated = {
+        ...loc,
+        baseScore,
+        urgencyBreakdown: breakdown,
+        urgencyScore: finalScore,
+        urgencyLevel: scoreToLevel(finalScore),
+        aiAdjustment: aiAdj,
+        aiReasoning: aiReason,
+      };
+      setSelected(updated);
+      setLocalities((prev) =>
+        prev.map((l) => (l.id === loc.id ? updated : l)).sort((a, b) => b.urgencyScore - a.urgencyScore)
+      );
+      toast.success(`Rescored: ${baseScore} base + ${aiAdj > 0 ? '+' : ''}${aiAdj} AI = ${finalScore}`);
     } catch (error) {
       console.error('Rescore error:', error);
+      toast.error('Failed to rescore locality');
     } finally {
       setRescoring(false);
     }

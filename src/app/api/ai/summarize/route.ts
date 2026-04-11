@@ -3,7 +3,12 @@ import { genai, MODEL } from '@/lib/ai/client';
 
 export async function POST(request: NextRequest) {
   try {
-    const { campTitle, patientVisits, dispenseLogs, followups } = await request.json();
+    const body = await request.json();
+    const { campTitle, patientVisits, dispenseLogs, followups } = body;
+
+    if (!campTitle || typeof campTitle !== 'string') {
+      return NextResponse.json({ success: false, error: 'campTitle is required' }, { status: 400 });
+    }
 
     const prompt = `You are a summary generation AI for SevaSetu AI, an NGO health camp platform.
 

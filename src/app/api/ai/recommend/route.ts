@@ -3,7 +3,15 @@ import { genai, MODEL, parseJsonResponse } from '@/lib/ai/client';
 
 export async function POST(request: NextRequest) {
   try {
-    const { campTitle, localityName, requiredRoles, volunteers } = await request.json();
+    const body = await request.json();
+    const { campTitle, localityName, requiredRoles, volunteers } = body;
+
+    if (!campTitle || typeof campTitle !== 'string') {
+      return NextResponse.json({ success: false, error: 'campTitle is required' }, { status: 400 });
+    }
+    if (!Array.isArray(volunteers) || volunteers.length === 0) {
+      return NextResponse.json({ success: false, error: 'volunteers array is required' }, { status: 400 });
+    }
 
     const prompt = `You are a resource matching AI for SevaSetu AI, an NGO health camp platform.
 
