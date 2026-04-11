@@ -32,11 +32,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(firebaseUser);
 
       if (firebaseUser) {
-        const doc = await getUserDoc(firebaseUser.uid);
-        if (doc) {
-          setUserDoc(doc);
-          setNeedsOnboarding(false);
-        } else {
+        try {
+          const doc = await getUserDoc(firebaseUser.uid);
+          if (doc) {
+            setUserDoc(doc);
+            setNeedsOnboarding(false);
+          } else {
+            setNeedsOnboarding(true);
+            setUserDoc(null);
+          }
+        } catch (err) {
+          console.error('Failed to fetch user doc:', err);
+          // Auth succeeded but Firestore failed — still let them through to onboarding
           setNeedsOnboarding(true);
           setUserDoc(null);
         }

@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, ArrowRight, Check } from 'lucide-react';
-import { signInWithGoogle, createUserDoc, getUserDoc, updateUserRole } from '@/lib/firebase/auth';
+import { signInWithGoogle, createUserDoc, getUserDoc, updateUserRole, checkRedirectResult } from '@/lib/firebase/auth';
 import { useAuth } from '@/contexts/AuthContext';
 import { UserRole } from '@/types';
 import toast from 'react-hot-toast';
@@ -69,6 +69,22 @@ function AuthContent() {
     }
   }, [user, userDoc, loading, showOnboarding, router]);
 
+  // Check for redirect result on page load (when signInWithRedirect was used)
+  useEffect(() => {
+    checkRedirectResult().then((redirectUser) => {
+      if (redirectUser) {
+        getUserDoc(redirectUser.uid).then((existingDoc) => {
+          if (existingDoc) {
+            toast.success(`Welcome back, ${existingDoc.displayName}!`);
+            router.push('/dashboard');
+          } else {
+            router.push('/auth?onboarding=true');
+          }
+        });
+      }
+    });
+  }, [router]);
+
   async function handleGoogleSignIn() {
     setIsSigningIn(true);
     try {
@@ -78,12 +94,15 @@ function AuthContent() {
         toast.success(`Welcome back, ${existingDoc.displayName}!`);
         router.push('/dashboard');
       } else {
-        // Needs onboarding
         router.push('/auth?onboarding=true');
       }
-    } catch (error) {
-      console.error('Sign in error:', error);
-      toast.error('Failed to sign in. Please try again.');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      // Don't show error toast for redirect — it's expected
+      if (!msg.includes('Redirecting')) {
+        console.error('Sign in error:', error);
+        toast.error('Failed to sign in. Please try again.');
+      }
     } finally {
       setIsSigningIn(false);
     }

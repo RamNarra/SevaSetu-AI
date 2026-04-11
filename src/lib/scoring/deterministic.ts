@@ -1,5 +1,5 @@
 import { UrgencyBreakdown, UrgencyLevel, ExtractedReport, Locality } from '@/types';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp } from 'firebase/firestore/lite';
 
 /**
  * Deterministic urgency scoring engine.

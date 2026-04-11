@@ -10,12 +10,11 @@ import {
   where,
   orderBy,
   limit,
-  onSnapshot,
   writeBatch,
   Timestamp,
   QueryConstraint,
   DocumentData,
-} from 'firebase/firestore';
+} from 'firebase/firestore/lite';
 import { db } from './config';
 
 // ---- Generic CRUD helpers ----
@@ -73,38 +72,64 @@ export async function deleteDocument(
 }
 
 /**
- * Real-time listener for a collection
+ * Poll-based collection watcher (replaces real-time onSnapshot).
+ * Returns an unsubscribe function to stop polling.
  */
 export function subscribeToCollection<T>(
   collectionName: string,
   callback: (data: T[]) => void,
   ...constraints: QueryConstraint[]
 ): () => void {
-  const q = constraints.length > 0
-    ? query(collection(db, collectionName), ...constraints)
-    : collection(db, collectionName);
+  let active = true;
 
-  return onSnapshot(q, (snapshot) => {
-    const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as T));
-    callback(data);
-  });
+  async function poll() {
+    if (!active) return;
+    try {
+      const data = await getCollection<T>(collectionName, ...constraints);
+      if (active) callback(data);
+    } catch (err) {
+      console.warn(`[Firestore] poll(${collectionName}) error:`, err);
+    }
+  }
+
+  // Initial fetch
+  poll();
+  // Poll every 5 seconds
+  const interval = setInterval(poll, 5000);
+
+  return () => {
+    active = false;
+    clearInterval(interval);
+  };
 }
 
 /**
- * Real-time listener for a single document
+ * Poll-based document watcher.
  */
 export function subscribeToDocument<T>(
   collectionName: string,
   docId: string,
   callback: (data: T | null) => void
 ): () => void {
-  return onSnapshot(doc(db, collectionName, docId), (snapshot) => {
-    if (snapshot.exists()) {
-      callback({ id: snapshot.id, ...snapshot.data() } as T);
-    } else {
-      callback(null);
+  let active = true;
+
+  async function poll() {
+    if (!active) return;
+    try {
+      const data = await getDocument<T>(collectionName, docId);
+      if (active) callback(data);
+    } catch (err) {
+      console.warn(`[Firestore] pollDoc(${collectionName}/${docId}) error:`, err);
     }
-  });
+  }
+
+  poll();
+  const interval = setInterval(poll, 5000);
+
+  return () => {
+    active = false;
+    clearInterval(interval);
+  };
 }
 
 /**

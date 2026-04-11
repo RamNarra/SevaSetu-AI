@@ -1,19 +1,51 @@
 import {
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, getDocs, collection, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, getDocs, collection, Timestamp } from 'firebase/firestore/lite';
 import { auth, db } from './config';
 import { UserDoc, UserRole } from '@/types';
 
 const googleProvider = new GoogleAuthProvider();
 
+/**
+ * Sign in with Google — tries popup first, falls back to redirect if popup fails.
+ */
 export async function signInWithGoogle(): Promise<User> {
-  const result = await signInWithPopup(auth, googleProvider);
-  return result.user;
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code;
+    // Popup blocked or closed — fall back to redirect
+    if (
+      code === 'auth/popup-blocked' ||
+      code === 'auth/popup-closed-by-user' ||
+      code === 'auth/cancelled-popup-request'
+    ) {
+      await signInWithRedirect(auth, googleProvider);
+      // This will redirect; the result is recovered via getRedirectResult below
+      throw new Error('Redirecting to Google sign-in...');
+    }
+    throw err;
+  }
+}
+
+/**
+ * Check for redirect result on page load (when signInWithRedirect was used).
+ */
+export async function checkRedirectResult(): Promise<User | null> {
+  try {
+    const result = await getRedirectResult(auth);
+    return result?.user || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function signOut(): Promise<void> {
@@ -25,15 +57,29 @@ export function onAuthChange(callback: (user: User | null) => void): () => void 
 }
 
 /**
+ * Promise that rejects after a timeout
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('Firestore timeout')), ms)
+    ),
+  ]);
+}
+
+/**
  * Check if user document exists in Firestore
  */
 export async function getUserDoc(uid: string): Promise<UserDoc | null> {
   const docRef = doc(db, 'users', uid);
-  const docSnap = await getDoc(docRef);
-  if (docSnap.exists()) {
-    return docSnap.data() as UserDoc;
+  try {
+    const docSnap = await withTimeout(getDoc(docRef), 8000);
+    return docSnap.exists() ? (docSnap.data() as UserDoc) : null;
+  } catch (err) {
+    console.warn('getUserDoc failed:', err instanceof Error ? err.message : err);
+    return null;
   }
-  return null;
 }
 
 /**
@@ -47,8 +93,13 @@ export async function createUserDoc(
   // Bootstrap: if no users exist, first user becomes COORDINATOR
   let assignedRole = role;
   if (!assignedRole) {
-    const usersSnap = await getDocs(collection(db, 'users'));
-    assignedRole = usersSnap.empty ? UserRole.COORDINATOR : UserRole.FIELD_VOLUNTEER;
+    try {
+      const usersSnap = await withTimeout(getDocs(collection(db, 'users')), 4000);
+      assignedRole = usersSnap.empty ? UserRole.COORDINATOR : UserRole.FIELD_VOLUNTEER;
+    } catch {
+      // Default to chosen role or COORDINATOR if Firestore is unreachable
+      assignedRole = UserRole.COORDINATOR;
+    }
   }
 
   const userDoc: UserDoc = {
@@ -60,7 +111,7 @@ export async function createUserDoc(
     createdAt: Timestamp.now(),
   };
 
-  await setDoc(doc(db, 'users', user.uid), userDoc);
+  await withTimeout(setDoc(doc(db, 'users', user.uid), userDoc), 5000);
   return userDoc;
 }
 

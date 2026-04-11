@@ -8,7 +8,7 @@ import { batchWrite, Timestamp } from '@/lib/firebase/firestore';
 import { seedLocalities, seedVolunteers, seedReports, seedCampPlans, seedPatientVisits, seedMedicineStock } from '@/data/seed';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
-import { collection, getDocs, writeBatch, doc } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc } from 'firebase/firestore/lite';
 import { db } from '@/lib/firebase/config';
 
 export default function AdminPage() {
