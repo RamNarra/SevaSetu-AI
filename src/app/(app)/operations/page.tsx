@@ -7,9 +7,11 @@ import {
   CheckCircle2, Loader2
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { subscribeToCollection, updateDocument, getCollection, where } from '@/lib/firebase/firestore';
-import { PatientVisit, VisitStage, CampPlan, UrgencyLevel } from '@/types';
+import { subscribeToCollection, updateDocument, getCollection, addDocument, where } from '@/lib/firebase/firestore';
+import { PatientVisit, VisitStage, CampPlan, MedicineStock, UrgencyLevel } from '@/types';
 import { urgencyBgColor } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { Timestamp } from 'firebase/firestore/lite';
 import toast from 'react-hot-toast';
 
 const stages = [
@@ -38,7 +40,9 @@ export default function OperationsPage() {
   useEffect(() => {
     getCollection<CampPlan>('camp_plans').then((data) => {
       setCamps(data);
-      const active = data.find((c) => c.status === 'ACTIVE') || data.find((c) => c.status === 'PLANNED');
+      // Prefer ACTIVE camp, then PLANNED camp with assigned patient visits
+      const active = data.find((c) => c.status === 'ACTIVE')
+        || data.sort((a, b) => (b.predictedTurnout || 0) - (a.predictedTurnout || 0)).find((c) => c.status === 'PLANNED');
       if (active?.id) setActiveCampId(active.id);
     });
   }, []);
@@ -69,6 +73,37 @@ export default function OperationsPage() {
     return unsub;
   }, [activeCampId]);
 
+  const { user } = useAuth();
+
+  async function dispenseMedicines(visit: PatientVisit) {
+    if (!visit.prescriptions || visit.prescriptions.length === 0 || !visit.campId) return;
+    try {
+      const stock = await getCollection<MedicineStock>('medicine_stock', where('campId', '==', visit.campId));
+      for (const rx of visit.prescriptions) {
+        const match = stock.find((m) => m.medicineName.toLowerCase().includes(rx.toLowerCase()) || rx.toLowerCase().includes(m.medicineName.toLowerCase()));
+        if (match?.id) {
+          await updateDocument('medicine_stock', match.id, {
+            quantityDispensed: (match.quantityDispensed || 0) + 1,
+          });
+          await addDocument('dispense_logs', {
+            visitId: visit.id,
+            campId: visit.campId,
+            medicineId: match.id,
+            medicineName: match.medicineName,
+            quantity: 1,
+            dispensedBy: user?.uid || '',
+            dispensedAt: Timestamp.now(),
+          });
+        }
+      }
+      if (visit.prescriptions.length > 0) {
+        toast.success(`Dispensed ${visit.prescriptions.length} prescription(s) for ${visit.patientName}`);
+      }
+    } catch (err) {
+      console.error('Dispense error:', err);
+    }
+  }
+
   async function moveToNextStage(visit: PatientVisit) {
     if (!visit.id) return;
     const nextStage = nextStageMap[visit.stage];
@@ -76,6 +111,10 @@ export default function OperationsPage() {
 
     setMovingId(visit.id);
     try {
+      // Auto-dispense medicines when completing pharmacy stage
+      if (visit.stage === VisitStage.AT_PHARMACY && nextStage === VisitStage.COMPLETED) {
+        await dispenseMedicines(visit);
+      }
       await updateDocument('patient_visits', visit.id, { stage: nextStage });
       toast.success(`${visit.patientName} → ${nextStage.replace('_', ' ')}`);
     } catch (error) {

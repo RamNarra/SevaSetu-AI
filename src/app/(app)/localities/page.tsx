@@ -158,9 +158,25 @@ export default function LocalitiesPage() {
     try {
       // Step 1: Fetch extracted reports for this locality
       const allReports = await getCollection<ExtractedReport>('extracted_reports');
-      const localityReports = allReports.filter(
+      let localityReports = allReports.filter(
         (r) => r.locality.toLowerCase() === loc.name.toLowerCase()
       );
+
+      // Fallback: if no extracted_reports exist, synthesize from locality's own data
+      if (localityReports.length === 0 && loc.issues && loc.issues.length > 0) {
+        const { Timestamp: FBTimestamp } = await import('firebase/firestore/lite');
+        localityReports = [{
+          reportId: 'synthetic',
+          locality: loc.name,
+          issueTypes: loc.issues,
+          urgencySignals: loc.urgencyLevel === 'CRITICAL' ? ['urgent', 'immediate attention needed'] : ['needs attention'],
+          estimatedAffected: loc.population ? Math.round(loc.population * 0.05) : 100,
+          supportNeeded: [],
+          confidence: 0.7,
+          entities: {},
+          processedAt: FBTimestamp.now(),
+        }];
+      }
 
       // Step 2: Compute deterministic base score
       const { score: baseScore, breakdown } = computeBaseUrgencyScore(localityReports, loc);

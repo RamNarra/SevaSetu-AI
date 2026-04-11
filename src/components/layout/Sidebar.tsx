@@ -20,7 +20,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { signOut } from '@/lib/firebase/auth';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -40,6 +40,15 @@ export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean;
   const pathname = usePathname();
   const { userDoc, user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   const isCoordinator = userDoc?.role === 'COORDINATOR';
   const items = isCoordinator ? [...navItems, ...adminItems] : navItems;
@@ -61,13 +70,12 @@ export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean;
 
       <motion.aside
         initial={false}
-        animate={{ width: collapsed ? 72 : 260 }}
+        animate={{
+          width: collapsed ? 72 : 260,
+          x: isMobile && !mobileOpen ? -(collapsed ? 72 : 260) : 0,
+        }}
         transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-        className={cn(
-          'fixed left-0 top-0 h-screen z-40 flex flex-col transition-transform duration-300',
-          'md:translate-x-0',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        )}
+        className="fixed left-0 top-0 h-screen z-40 flex flex-col"
         style={{
           background: 'linear-gradient(180deg, #1B2E25 0%, #152219 100%)',
         }}

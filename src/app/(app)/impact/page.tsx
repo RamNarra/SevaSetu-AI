@@ -10,6 +10,66 @@ import { getCollection } from '@/lib/firebase/firestore';
 import { CampPlan, PatientVisit, MedicineStock, DispenseLog, Followup, VisitStage } from '@/types';
 import toast from 'react-hot-toast';
 
+/**
+ * Simple markdown-to-HTML converter for AI summaries.
+ * Handles headers, bold, lists, tables, and horizontal rules.
+ */
+function markdownToHtml(md: string): string {
+  let html = md
+    // Escape HTML
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    // Headers
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    // Horizontal rules
+    .replace(/^---$/gm, '<hr />')
+    // Bold
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Italic
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Unordered lists
+    .replace(/^\* (.+)$/gm, '<li>$1</li>')
+    // Inline code
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Wrap consecutive <li> in <ul>
+  html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
+
+  // Tables: detect lines with | and convert
+  const lines = html.split('\n');
+  const result: string[] = [];
+  let inTable = false;
+  for (const line of lines) {
+    if (line.includes('|') && line.trim().startsWith('|')) {
+      // Skip separator lines like | :--- | :--- |
+      if (/^\|[\s:?-]+\|/.test(line.trim()) && !line.includes('<')) {
+        continue;
+      }
+      const cells = line.split('|').filter((c) => c.trim() !== '');
+      if (!inTable) {
+        result.push('<table>');
+        result.push('<tr>' + cells.map((c) => `<th>${c.trim()}</th>`).join('') + '</tr>');
+        inTable = true;
+      } else {
+        result.push('<tr>' + cells.map((c) => `<td>${c.trim()}</td>`).join('') + '</tr>');
+      }
+    } else {
+      if (inTable) {
+        result.push('</table>');
+        inTable = false;
+      }
+      result.push(line);
+    }
+  }
+  if (inTable) result.push('</table>');
+
+  // Wrap remaining plain text lines in <p>
+  return result.join('\n')
+    .replace(/\n{2,}/g, '</p><p>')
+    .replace(/^(?!<[huptlo])/gm, (m) => m ? `<p>${m}` : m);
+}
+
 export default function ImpactPage() {
   const [camps, setCamps] = useState<CampPlan[]>([]);
   const [visits, setVisits] = useState<PatientVisit[]>([]);
@@ -228,9 +288,10 @@ export default function ImpactPage() {
 
           {summaryText ? (
             <div className="prose prose-sm max-w-none">
-              <div className="p-4 rounded-xl bg-[#FAF9F6] border border-[#E5E2DC] text-sm text-[#1A1A1A] leading-relaxed whitespace-pre-wrap">
-                {summaryText}
-              </div>
+              <div
+                className="p-4 rounded-xl bg-[#FAF9F6] border border-[#E5E2DC] text-sm text-[#1A1A1A] leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-4 [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-bold [&_h3]:mt-3 [&_h3]:mb-1 [&_hr]:my-3 [&_hr]:border-[#E5E2DC] [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1 [&_table]:w-full [&_table]:border-collapse [&_table]:my-2 [&_th]:border [&_th]:border-[#E5E2DC] [&_th]:px-2 [&_th]:py-1 [&_th]:bg-[#F0EDE8] [&_th]:text-left [&_th]:text-xs [&_th]:font-bold [&_td]:border [&_td]:border-[#E5E2DC] [&_td]:px-2 [&_td]:py-1 [&_td]:text-xs [&_strong]:font-bold"
+                dangerouslySetInnerHTML={{ __html: markdownToHtml(summaryText) }}
+              />
             </div>
           ) : (
             <div className="text-center py-8 text-[#6B7280]">

@@ -39,7 +39,7 @@ Rank by match score descending. Include ALL available volunteers with scores.`;
     const response = await genai.models.generateContent({
       model: MODEL,
       contents: prompt,
-      config: { temperature: 0.3, maxOutputTokens: 4096 },
+      config: { temperature: 0.3, maxOutputTokens: 8192 },
     });
 
     const text = response.text || '';

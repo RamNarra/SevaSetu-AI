@@ -32,16 +32,31 @@ export default function ReportsPage() {
 
     setIsSubmitting(true);
     try {
+      // Read text content from uploaded file if no pasted text
+      let textForExtraction = rawText.trim();
+      if (!textForExtraction && uploadedFile) {
+        try {
+          textForExtraction = await uploadedFile.text();
+        } catch {
+          toast.error('Could not read file content');
+        }
+      }
+
       let fileUrls: string[] = [];
       if (uploadedFile) {
-        const url = await uploadReportFile(uploadedFile);
-        fileUrls = [url];
+        try {
+          const url = await uploadReportFile(uploadedFile);
+          fileUrls = [url];
+        } catch (uploadErr) {
+          console.warn('File upload failed (storage rules may not be deployed):', uploadErr);
+          // Continue — we still have the text content for extraction
+        }
       }
 
       const reportId = await addDocument('community_reports', {
         submittedBy: user?.uid || '',
         submitterName: user?.displayName || '',
-        rawText: rawText.trim(),
+        rawText: textForExtraction,
         fileUrls,
         source: uploadedFile ? 'upload' : 'paste',
         status: ReportStatus.RAW,
@@ -56,7 +71,7 @@ export default function ReportsPage() {
         const response = await fetch('/api/ai/extract', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reportId, text: rawText.trim() }),
+          body: JSON.stringify({ reportId, text: textForExtraction }),
         });
         const data = await response.json();
         if (data.success) {
@@ -183,14 +198,22 @@ export default function ReportsPage() {
                   <div className="p-3 rounded-lg bg-[#FAF9F6] border border-[#E5E2DC]">
                     {Array.isArray(value) ? (
                       <div className="flex flex-wrap gap-1.5">
-                        {(value as string[]).map((v, i) => (
+                        {(value as unknown[]).map((v, i) => (
                           <span key={i} className="badge bg-primary-pale text-[#D4622B] border-[#D4622B]/20">
-                            {String(v)}
+                            {typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)}
                           </span>
                         ))}
                       </div>
                     ) : typeof value === 'number' ? (
                       <p className="text-xl font-bold text-[#1A1A1A]">{value}</p>
+                    ) : typeof value === 'object' && value !== null ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.entries(value as Record<string, unknown>).map(([k, v]) => (
+                          <span key={k} className="badge bg-primary-pale text-[#D4622B] border-[#D4622B]/20">
+                            {k}: {Array.isArray(v) ? v.join(', ') : String(v)}
+                          </span>
+                        ))}
+                      </div>
                     ) : (
                       <p className="text-[#1A1A1A]">{String(value)}</p>
                     )}
