@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, Search } from 'lucide-react';
+import { Bell, Search, Menu } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
 import { useState, useRef, useEffect } from 'react';
@@ -17,7 +17,7 @@ const searchRoutes = [
   { label: 'Admin', path: '/admin', keywords: ['admin', 'seed', 'data', 'settings'] },
 ];
 
-export default function Navbar() {
+export default function Navbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const { user, userDoc } = useAuth();
   const router = useRouter();
   const [query, setQuery] = useState('');
@@ -44,8 +44,16 @@ export default function Navbar() {
       transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
       className="sticky top-0 z-30 h-16 border-b border-[#E5E2DC] bg-[#FAF9F6]/80 backdrop-blur-xl flex items-center justify-between px-6"
     >
+      {/* Mobile menu button */}
+      <button
+        onClick={onMenuToggle}
+        className="md:hidden p-2 rounded-xl hover:bg-white border border-transparent hover:border-[#E5E2DC] transition-all mr-2"
+      >
+        <Menu className="w-5 h-5 text-[#6B7280]" />
+      </button>
+
       {/* Search */}
-      <div className="relative max-w-md flex-1" onClick={(e) => e.stopPropagation()}>
+      <div className="relative max-w-md flex-1 hidden sm:block" onClick={(e) => e.stopPropagation()}>
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6B7280]" />
         <input
           ref={inputRef}

@@ -36,7 +36,7 @@ const adminItems = [
   { label: 'Admin', href: '/admin', icon: Shield },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean; onClose?: () => void }) {
   const pathname = usePathname();
   const { userDoc, user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
@@ -45,15 +45,33 @@ export default function Sidebar() {
   const items = isCoordinator ? [...navItems, ...adminItems] : navItems;
 
   return (
-    <motion.aside
-      initial={false}
-      animate={{ width: collapsed ? 72 : 260 }}
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-      className="fixed left-0 top-0 h-screen z-40 flex flex-col"
-      style={{
-        background: 'linear-gradient(180deg, #1B2E25 0%, #152219 100%)',
-      }}
-    >
+    <>
+      {/* Mobile overlay */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          />
+        )}
+      </AnimatePresence>
+
+      <motion.aside
+        initial={false}
+        animate={{ width: collapsed ? 72 : 260 }}
+        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+        className={cn(
+          'fixed left-0 top-0 h-screen z-40 flex flex-col transition-transform duration-300',
+          'md:translate-x-0',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        )}
+        style={{
+          background: 'linear-gradient(180deg, #1B2E25 0%, #152219 100%)',
+        }}
+      >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-white/10">
         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#D4622B] to-[#F4A261] flex items-center justify-center flex-shrink-0">
@@ -82,7 +100,7 @@ export default function Sidebar() {
         {items.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
           return (
-            <Link href={item.href} key={item.href}>
+            <Link href={item.href} key={item.href} onClick={onClose}>
               <motion.div
                 whileHover={{ x: 4 }}
                 whileTap={{ scale: 0.97 }}
@@ -171,5 +189,6 @@ export default function Sidebar() {
         </button>
       </div>
     </motion.aside>
+    </>
   );
 }

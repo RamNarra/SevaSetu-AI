@@ -132,6 +132,7 @@ export default function LandingPage() {
             <motion.button
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
+              onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
               className="btn-outline text-base px-8 py-3.5"
             >
               Watch Demo
@@ -179,7 +180,7 @@ export default function LandingPage() {
       </section>
 
       {/* Features */}
-      <section className="py-20 px-6">
+      <section id="features" className="py-20 px-6">
         <div className="max-w-6xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
