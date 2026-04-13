@@ -62,16 +62,16 @@ This repository is a working Beta MVP with:
 ```mermaid
 flowchart TD
 	A[Field Notes / Uploaded Reports] --> B[Firestore: community_reports]
-	B --> C[/api/ai/extract]
+	B --> C["API route: /api/ai/extract"]
 	C --> D[Structured Need Signals]
 	D --> E[Deterministic Urgency Engine]
-	E --> F[/api/ai/score]
+	E --> F["API route: /api/ai/score"]
 	F --> G[Locality Priority Board + Map Heat Signals]
 	G --> H[Camp Planner Inputs]
-	H --> I[/api/ai/recommend]
+	H --> I["API route: /api/ai/recommend"]
 	I --> J[Assigned Team + camp_plans]
 	J --> K[Real-time patient_visits operations]
-	K --> L[/api/ai/summarize]
+	K --> L["API route: /api/ai/summarize"]
 	L --> M[Impact summary + follow-up planning]
 ```
 
