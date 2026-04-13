@@ -2,121 +2,173 @@
 
 ![SevaSetu AI](https://img.shields.io/badge/Google_Solution_Challenge-2026-F4A261?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Beta_MVP-2D6A4F?style=for-the-badge)
-![Next.js](https://img.shields.io/badge/Next.js-16+-black?style=for-the-badge&logo=next.js)
+![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)
 ![Firebase](https://img.shields.io/badge/Firebase-V12-FFCA28?style=for-the-badge&logo=firebase)
 ![Gemini](https://img.shields.io/badge/Gemini-3.0_Flash-4285F4?style=for-the-badge&logo=google)
 
-**SevaSetu AI is a Smart Resource Allocation platform for NGOs, with community health camp coordination as its flagship workflow and demo scenario.** 
+SevaSetu AI is a smart resource allocation platform for NGO-led community health camps.
 
-*One-line pitch: SevaSetu AI turns scattered NGO field reports into clear local need signals and intelligently matches the right volunteers to the right tasks and locations.*
+One-line pitch: turn scattered field reports into structured need signals, rank localities by urgency, recommend the right team for each camp, and run camp-day operations in real time.
 
----
+## Problem
+NGOs often have volunteers, medicines, and intent, but not a unified operational intelligence layer.
 
-## 🎯 The Problem 
-NGOs running community health camps receive field data from scattered surveys, notes, spreadsheets, and prior reports. Without proper aggregation and analysis, the most urgent communities are underserved while available volunteers are misallocated. Resources exist, but visibility doesn't.
+Field information comes from mixed formats (notes, survey snippets, phone updates), making it hard to answer:
+- Which locality is most urgent right now?
+- Which team should be sent there?
+- Are camp-day operations moving fast enough?
+- What should be followed up after camp closure?
 
-## 💡 The Solution
-SevaSetu AI provides an **AI-powered coordination hub**. 
-It ingests messy reports, uses **Gemini 3 Flash** to structure and classify needs, scores localities by urgency with transparent hybrid reasoning, recommends optimal staff assignments based on constraints (distance, languages, availability, skills), and powers real-time camp-day operations tracking.
+## What SevaSetu AI Does
+SevaSetu AI combines deterministic scoring, Gemini-assisted reasoning, and live operations tooling:
+- Converts unstructured reports into structured JSON through AI extraction.
+- Prioritizes localities with a transparent urgency model.
+- Uses AI matching for role-wise volunteer recommendations.
+- Tracks patient flow on a real-time kanban pipeline.
+- Generates post-camp impact summaries for coordinators.
 
----
+## Current State (April 2026)
+This repository is a working Beta MVP with:
 
-## 🏗 Architecture: GCP + Firebase Hybrid
+### Product modules
+- Landing and onboarding flow with Google Sign-In + role setup.
+- Coordinator app shell with pages: dashboard, reports, localities, planner, allocation, operations, impact, admin.
+- Firestore-backed real-time updates for operations and core entities.
+- Seed tooling to preload realistic demo data for end-to-end walkthroughs.
 
-SevaSetu uses a highly scalable, serverless hybrid architecture tailored for rapid operational data loops and AI generation tasks.
+### AI API routes (Next.js route handlers)
+- `POST /api/ai/extract`: structured extraction from raw reports.
+- `POST /api/ai/score`: urgency adjustment and reasoning from base score context.
+- `POST /api/ai/recommend`: volunteer-role matching with match scores.
+- `POST /api/ai/summarize`: markdown summary generation for camp outcomes.
 
+### Tech foundations
+- Next.js 16 + React 19 + TypeScript + Tailwind CSS v4.
+- Firebase Auth, Firestore, and Storage.
+- Google Maps JS API (map + marker + visualization libraries).
+- Gemini 3.0 Flash via `@google/genai`.
+
+## User Flow (Coordinator Journey)
+1. Sign in using Google and select role if onboarding is required.
+2. Open Dashboard to view priority localities, camp readiness, and alerts.
+3. Go to Reports to submit raw field notes or uploads and run AI extraction.
+4. Open Localities to inspect urgency ranks, map signals, and AI reasoning.
+5. Use Camp Planner to pick locality, set required roles, and fetch AI staffing recommendations.
+6. Finalize assignments through Allocation and create camp plan.
+7. Run live queue movement in Operations (Registered -> Triaged -> Consultation -> Pharmacy -> Completed).
+8. Review outcomes in Impact and generate AI summary for next-cycle decisions.
+
+## System Workflow (Data + AI)
+```mermaid
+flowchart TD
+	A[Field Notes / Uploaded Reports] --> B[Firestore: community_reports]
+	B --> C[/api/ai/extract]
+	C --> D[Structured Need Signals]
+	D --> E[Deterministic Urgency Engine]
+	E --> F[/api/ai/score]
+	F --> G[Locality Priority Board + Map Heat Signals]
+	G --> H[Camp Planner Inputs]
+	H --> I[/api/ai/recommend]
+	I --> J[Assigned Team + camp_plans]
+	J --> K[Real-time patient_visits operations]
+	K --> L[/api/ai/summarize]
+	L --> M[Impact summary + follow-up planning]
+```
+
+## What We Are Doing Differently
+Many NGO dashboards stop at reporting. SevaSetu AI is designed as an operational decision loop.
+
+### 1) Hybrid urgency, not black-box ranking
+- Deterministic score components are explicit (`severity`, `recency`, `repeatComplaints`, `serviceGap`, `vulnerability`).
+- AI is used as a bounded adjustment and explanation layer, not as opaque end-to-end scoring.
+
+### 2) Planning and execution in one surface
+- Most tools split planning from camp-day execution.
+- SevaSetu connects prioritization -> staffing -> live patient flow -> impact reporting in one workflow.
+
+### 3) Social context included in matching
+- Recommendation logic considers not just role fit, but also language, travel radius, certifications, and prior camp experience.
+
+### 4) Built for demos and field iteration
+- Seeded realistic data and role-aware UI make it easy to demo and iterate with stakeholders quickly.
+
+## Architecture Snapshot
 | Capability | Choice | Why |
-|------------|--------|-----|
-| **Auth** | Firebase Auth (Google Sign-In) | Immediate, secure, frictionless onboarding. |
-| **Database** | Firestore (Firebase SDK) | Real-time `onSnapshot` for camp-day operations and queues. |
-| **Storage** | Cloud Storage (Firebase SDK) | Scalable file uploads (reports) heavily secured by Rules. |
-| **AI/ML** | **Gemini Developer API first** → Vertex AI | Powered by Gemini 3.0 Flash via the unified `@google/genai` SDK. Fast text extraction, scoring verification, and multi-variable matching. |
-| **Maps** | Google Maps JS API + Visualization | Live markers and Heatmap layers to display urgency scoring geographically. |
-| **Frontend** | Next.js 16+ (App Router) | High-performance, scalable React framework with Tailwind CSS & Framer Motion for premium UI. |
+|---|---|---|
+| Auth | Firebase Auth (Google) | Fast, reliable onboarding and role-aware access |
+| Data | Firestore | Flexible docs + real-time listeners for operations |
+| File intake | Firebase Storage | Secure report uploads with rules |
+| AI | Gemini 3.0 Flash (`@google/genai`) | Fast extraction, matching, and summarization |
+| Geo | Google Maps JS API | Locality heat signals and marker-based prioritization |
+| Frontend | Next.js App Router + Tailwind + Framer Motion | Fast UX and modular feature pages |
 
----
+## Local Development
 
-## 🚀 Key Features
+### 1. Install dependencies
+```bash
+npm install
+```
 
-### 1. Ingest Field Data (AI Extraction)
-Users can paste messy field notes or upload raw survey documents. The system pings the Gemini API, which extracts structured JSON payload immediately identifying:
-- Exact locality and sub-regions
-- Mentioned health issues (e.g. TB, maternal health, malnourishment)
-- Urgency signals ("children hospitalized")
-- Estimated affected count
-- Support types needed
+### 2. Create environment file
+Create `.env.local` in project root with:
 
-### 2. Locality Prioritization & Hybrid Scoring
-No black box AI. SevaSetu AI uses a **Deterministic base score (70%) + AI Adjustment (30%)** approach.
-- **Deterministic**: Factors in mathematical severity, recency, repeat complaints, service gaps, and base vulnerability index.
-- **AI Layer**: Gemini validates the score against recent field reports, adjusts it (+/- 10 points) if necessary, and writes a human-readable 2-sentence explanation of *why* the locality is scored the way it is.
-- **Geospatial view**: Visually plotted on a Live Google Map with Heatmap layers indicating critical zones.
+```bash
+# Firebase (client)
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=
 
-### 3. Smart Team Matching
-When an NGO plans a camp, Gemini scans available volunteers to fulfill the required roles (Doctors, Pharmacists, Field workers, Support). It generates match scores predicting the best fit based on:
-- Distance / Travel radius from locality
-- Language overlapping (Tribal/Regional languages)
-- Specializations & Certifications
-- Past completion rating
-Availability is enforced.
+# Google Maps
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
 
-### 4. Camp-Day Operations
-A real-time Kanban flow using Firestore `onSnapshot`. Patients move through Registration → Triage → Consultation → Pharmacy → Complete. Allows coordinators to visually see bottlenecks and triage critical patients dynamically.
+# Gemini direct API mode
+GEMINI_API_KEY=
 
-### 5. Impact Reports
-Post-camp outcomes are aggregated (patients served, critical cases, medicines dispensed) and piped through Gemini to generate intelligent text summaries, offering actionable follow-up recommendations and inventory alerts for future camps at that locality.
+# Optional: Vertex AI mode instead of direct Gemini key
+GOOGLE_GENAI_USE_VERTEXAI=false
+GOOGLE_CLOUD_PROJECT=
+GOOGLE_CLOUD_LOCATION=
+```
 
----
+### 3. Run app
+```bash
+npm run dev
+```
 
-## 📋 Implementation Plan & Progress
+### 4. Useful scripts
+```bash
+npm run dev
+npm run build
+npm run start
+npm run lint
+```
 
-We have strictly executed a 4-phase rollout to hit a Production-Grade MVP.
+## Data and Security Notes
+- Firestore rules enforce authenticated reads and coordinator-gated writes for most collections.
+- Storage rules scope uploads under `reports/{userId}/...` and enforce owner writes.
+- First user bootstrap can be coordinator; subsequent users are role-based through onboarding/admin flows.
 
-### Phase 1: Scaffold + Infrastructure + First-Run Path — ✅ COMPLETE
-- ✅ Scaffold Next.js (App Router, TypeScript, Tailwind CSS, ESLint).
-- ✅ Integrate dependencies (`firebase`, `@google/genai`, `@googlemaps/js-api-loader`, `framer-motion`).
-- ✅ Create centralized TypeScript types corresponding to 12 Firestore collections and Enums.
-- ✅ Firebase Config, helper classes, storage boundaries.
-- ✅ Firestore and Storage Security Rules (Role-based access).
-- ✅ `@google/genai` client integration.
-- ✅ Google Maps v2 functional API loader.
-- ✅ Deterministic Urgency Engine implementation.
-- ✅ Firebase AuthContext + AuthGuard component.
-- ✅ Landing Page (Framer Motion animations, Hero, Features).
-- ✅ Split-Screen Auth Page (Role-based onboarding flow).
-- ✅ Core Layout (App Shell, Navbar, Glassmorphism Sidebar).
-- ✅ Database Seeder with realistic Indian rural/urban health context (6 localities, 15 volunteers, 10 reports, 2 camp plans, 12 patient visits, 12 medicine stocks).
+## Demo Data
+Admin panel seeding currently includes:
+- 6 localities
+- 15 volunteers
+- 10 community reports
+- 2 camp plans
+- 12 patient visits
+- 12 medicine stock entries
 
-### Phase 2: Core Intelligence (Intake & Prioritization) — ✅ COMPLETE
-- ✅ Real-time operations Dashboard (Metric counters, upcoming camps, priority locality ranked feeds).
-- ✅ Report Intake form (with text + file upload parsing).
-- ✅ **AI Route**: `/api/ai/extract` — Successfully structuring messy data into precise JSON entities.
-- ✅ Localities Prioritization Board — Urgency lists and score breakdowns.
-- ✅ **AI Route**: `/api/ai/score` — Gemini processing human-readable justification for the score values.
-- ✅ Google Maps Heatmap integration with `AdvancedMarkerElement` and custom UI overlays reacting directly to Firestore changes.
+This makes full demo traversal possible without manual dataset prep.
 
-### Phase 3: Planning & Operations — ✅ COMPLETE
-- ✅ Camp Planner Form.
-- ✅ **AI Route**: `/api/ai/recommend` — Live parsing of volunteer structures vs required roles to auto-recommend optimized NGO teams.
-- ✅ Volunteer Allocation hub (Search, Skill badges, custom Availability toggles).
-- ✅ Real-Time Camp-Day Operations Kanban Board — Powered entirely by `onSnapshot` rendering live updates to patient stages without refreshing.
+## Project Status
+Active Google Solution Challenge 2026 build.
 
-### Phase 4: Impact & Polish — ✅ COMPLETE
-- ✅ Post-Camp Impact Analytics view (Metric cards, outcome distribution, pending followups).
-- ✅ **AI Route**: `/api/ai/summarize` — Generative pipeline constructing actionable post-camp conclusions and observations based on metadata logs.
-- ✅ Animations polish — Staggered Framer Motion lists, unified spring transitions.
-- ✅ Build passes completely with *zero errors*. Fully Next.js 16 / React 19 capable. 
+Current focus:
+- Strengthening extraction-to-storage continuity for automated downstream updates.
+- More robust role-scoped experiences and validation.
+- Production deployment hardening and observability.
 
----
-
-## 💻 Tech Stack Deep Dive
-- **Framework**: Next.js 16 (App Router)
-- **Styling**: TailwindCSS 4, custom CSS Utilities (`globals.css`), Framer Motion (for all interactions, stagger arrays, page routing UI).
-- **Icons**: `lucide-react`
-- **Database**: Google Firebase (Firestore, Storage, Authentication)
-- **AI**: Gemini (`@google/genai`) via `gemini-3.0-flash` (Global availability).
-- **Geospatial**: Google Maps Platform (`js-api-loader`).
-
----
-
-*Developed for the Google Solution Challenge 2026. Built with ❤️ for social impact.*
+Built for social impact with a clear goal: help NGOs make faster, fairer, and more explainable resource allocation decisions.
