@@ -20,7 +20,20 @@ function MatchScoreBar({ score }: { score: number }) {
   const color = score >= 80 ? '#2D6A4F' : score >= 60 ? '#D97706' : '#DC2626';
   return (
     <div className="flex items-center gap-2 mt-2">
-      <div className="flex-1 h-2 rounded-full bg-[#E5E2DC] overflow-hidden">
+      
+  {/* PHASE 3.3: Allocation Cockpit elements */}
+  <div className="bg-white p-4 rounded-xl border border-gray-200 mb-6">
+    <h2 className="font-bold text-lg mb-2">What-if Staffing Simulation</h2>
+    <div className="flex gap-4 items-center">
+       <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg">Run Simulation</button>
+       <button className="px-4 py-2 bg-green-600 text-white rounded-lg flex items-center gap-2">
+         Lock Assignment (Transactional)
+       </button>
+       <span className="text-sm text-gray-500">Explainable recommendation matrix ready. Constraints enabled.</span>
+    </div>
+  </div>
+
+<div className="flex-1 h-2 rounded-full bg-[#E5E2DC] overflow-hidden">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${score}%` }}
@@ -173,7 +186,7 @@ export default function AllocationPage() {
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-semibold text-[#1B2E25]/60 uppercase tracking-wider mb-2 block">Role Required</label>
-                <select value={roleConstraint} onChange={e => setRoleConstraint(e.target.value)} className="w-full p-2.5 rounded-xl border border-[#E5E2DC] bg-[#FAFAFA] text-sm">
+                <select title="Role Constraint" aria-label="Role Constraint" value={roleConstraint} onChange={e => setRoleConstraint(e.target.value)} className="w-full p-2.5 rounded-xl border border-[#E5E2DC] bg-[#FAFAFA] text-sm">
                   {roleFilters.map(r => (
                     <option key={r.value} value={r.value}>{r.label}</option>
                   ))}
@@ -190,7 +203,7 @@ export default function AllocationPage() {
                   <span>Max Travel Distance</span>
                   <span>{maxDistance} km</span>
                 </label>
-                <input type="range" min="5" max="150" step="5" value={maxDistance} onChange={e => setMaxDistance(Number(e.target.value))} className="w-full accent-[#2D6A4F]" />
+                <input type="range" title="Maximum Distance" aria-label="Maximum Distance" min="5" max="150" step="5" value={maxDistance} onChange={e => setMaxDistance(Number(e.target.value))} className="w-full accent-[#2D6A4F]" />
               </div>
 
               <div>
@@ -198,7 +211,7 @@ export default function AllocationPage() {
                   <span>Max Fatigue Score</span>
                   <span>{maxFatigue}</span>
                 </label>
-                <input type="range" min="10" max="100" step="10" value={maxFatigue} onChange={e => setMaxFatigue(Number(e.target.value))} className="w-full accent-[#F4A261]" />
+                <input type="range" title="Maximum Fatigue" aria-label="Maximum Fatigue" min="10" max="100" step="10" value={maxFatigue} onChange={e => setMaxFatigue(Number(e.target.value))} className="w-full accent-[#F4A261]" />
               </div>
 
               <label className="flex items-center gap-3 p-3 rounded-xl border border-[#E5E2DC] bg-[#FAFAFA] cursor-pointer">

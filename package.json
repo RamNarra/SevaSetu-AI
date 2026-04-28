@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "npm@10.9.7",
   "engines": {
-    "node": ">=20.9.0",
+    "node": "20",
     "npm": "10.9.7"
   },
   "scripts": {
@@ -25,7 +25,8 @@
     "next": "16.2.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "react-hot-toast": "^2.6.0"
+    "react-hot-toast": "^2.6.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

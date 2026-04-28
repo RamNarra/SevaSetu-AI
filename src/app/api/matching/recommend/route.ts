@@ -20,24 +20,27 @@ export async function POST(request: NextRequest) {
     const signal = reportDoc.data() as ExtractedSignal;
 
     // 2. Fetch all Volunteer Profiles
-    // For MVP, we fetch all. In prod, we'd use a geo-fence query.
+    // For MVP, we fetch all. In prod, we'd use a geo-fence query via geohash (Phase 2.4)
     const volunteersSnap = await adminDb.collection('volunteer_profiles').get();
-    const allVolunteers: VolunteerProfile[] = volunteersSnap.docs.map((doc) => {
-      const data = doc.data();
-      return { id: doc.id, ...data } as VolunteerProfile;
+    const allVolunteers: VolunteerProfile[] = [];
+    
+    volunteersSnap.forEach((doc) => {
+      const data = doc.data() as VolunteerProfile;
+      data.uid = doc.id;
+      allVolunteers.push(data);
     });
 
-    // 3. Run the Two-Pass Matching Engine
-    const matches = rankVolunteers(signal, allVolunteers);
+    // 3. Run the Deterministic Two-Pass Matching Engine
+    const matches = await rankVolunteers(signal, allVolunteers);
 
-    // 4. Return the Top 3 candidates
-    const top3 = matches.slice(0, 3).map(m => ({
-      volunteerId: m.volunteer.id,
+    // 4. Return the Top candidates
+    const top3 = matches.map(m => ({
+      volunteerId: m.volunteer.uid,
       displayName: m.volunteer.displayName,
       role: m.volunteer.role,
       matchScore: m.matchScore,
       explanation: m.explanation,
-      coordinates: m.volunteer.coordinates
+      coordinates: m.volunteer.currentLocation
     }));
 
     return NextResponse.json({

@@ -11,7 +11,16 @@ export const genai = useVertexAI
     })
   : new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-export const MODEL = 'gemini-1.5-flash';
+// Models configured by task as per Phase 1.1
+export const MODELS = {
+  extraction: 'gemini-2.5-pro',
+  routing: 'gemini-2.5-flash',
+  vision: 'gemini-2.5-pro',
+  embeddings: 'text-embedding-004',
+};
+
+// Default fallback for legacy endpoints
+export const MODEL = MODELS.routing;
 
 /**
  * Extract and parse JSON from Gemini response text.

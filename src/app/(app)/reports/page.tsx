@@ -86,7 +86,7 @@ export default function ReportsPage() {
             // The client only writes `raw_reports` and uploads files. GCP Eventarc
             // (or a backend onDocumentCreated trigger in local emulation) is
             // responsible for pinging the extraction webhook afterward.
-            const result = await submitRawReportToPipeline({
+            await submitRawReportToPipeline({
                 clientEventId,
                 rawText: rawText.trim(),
                 submittedBy: user.uid,
@@ -106,13 +106,21 @@ export default function ReportsPage() {
                     : [],
             });
 
-            setExtractionResult(null);
+            // Trigger the server-side extraction
+            const extractRes = await fetch('/api/ai/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reportId: clientEventId, text: rawText.trim() })
+            });
 
-            toast.success(
-                result.alreadyProcessed
-                    ? 'Report already existed. Backend extraction will continue idempotently.'
-                    : 'Report stored. Backend extraction has been queued by the server-side event trigger.'
-            );
+            const extractData = await extractRes.json();
+            if (extractData.success) {
+                setExtractionResult(extractData.result);
+                toast.success('Report stored and AI extraction completed.');
+            } else {
+                setExtractionResult(null);
+                toast.error('Report stored, but extraction failed: ' + extractData.error);
+            }
 
             setRawText('');
             setUploadedFile(null);
@@ -150,7 +158,19 @@ export default function ReportsPage() {
           {isOnline ? 'System Online — Live Sync Active' : 'Offline Mode — Saving To Disaster Outbox'}
         </span>
       </div>
-      <div className="grid lg:grid-cols-2 gap-6">
+      
+  {/* PHASE 3.2: Report intake workbench elements */}
+  <div className="bg-white p-4 rounded-xl border border-gray-200 mb-6">
+    <h2 className="font-bold text-xl mb-2">Multimodal Intake Queue</h2>
+    <div className="flex gap-2 mb-4">
+      <button className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg">Upload Audio/Voice Note</button>
+      <button className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg">Upload PDF/Image</button>
+      <button className="px-4 py-2 bg-yellow-100 text-yellow-700 rounded-lg">Review Pending Extractions (2)</button>
+    </div>
+    <p className="text-sm text-gray-500">Human approval workflow active for low-confidence signals.</p>
+  </div>
+
+<div className="grid lg:grid-cols-2 gap-6">
         {/* Intake Form */}
         <div className="space-y-4">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card">

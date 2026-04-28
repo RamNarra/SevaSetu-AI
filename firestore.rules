@@ -22,8 +22,8 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || isCoordinator();
+      allow create: if isOwner(userId) && request.resource.data.role != 'COORDINATOR';
+      allow update: if isCoordinator() || (isOwner(userId) && request.resource.data.role != 'COORDINATOR');
     }
 
     match /volunteer_profiles/{docId} {

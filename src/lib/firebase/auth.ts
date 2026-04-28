@@ -94,26 +94,14 @@ export async function getUserDoc(uid: string): Promise<UserDoc | null> {
 
 /**
  * Create user document after sign-in.
- * First user in the system is auto-assigned COORDINATOR role (bootstrap).
  */
 export async function createUserDoc(
   user: User,
   role?: UserRole
 ): Promise<UserDoc> {
-  let isFirstUser = false;
-
-  try {
-    const usersSnap = await withTimeout(getDocs(collection(db, 'users')), 4000);
-    isFirstUser = usersSnap.empty;
-  } catch (err) {
-    console.warn('Failed to verify first-user bootstrap:', err instanceof Error ? err.message : err);
-  }
-
-  const assignedRole = isFirstUser
-    ? UserRole.COORDINATOR
-    : role && isPublicOnboardingRole(role)
-      ? role
-      : UserRole.FIELD_VOLUNTEER;
+  const assignedRole = role && isPublicOnboardingRole(role)
+    ? role
+    : UserRole.FIELD_VOLUNTEER;
 
   const userDoc: UserDoc = {
     uid: user.uid,
