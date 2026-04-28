@@ -1,11 +1,15 @@
 import { GoogleGenAI } from '@google/genai';
 
-// Initialize with Vertex AI
-export const genai = new GoogleGenAI({
-  vertexai: true,
-  project: process.env.GOOGLE_CLOUD_PROJECT,
-  location: process.env.GOOGLE_CLOUD_LOCATION || 'us-central1',
-});
+const useVertexAI = process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true';
+
+// Initialize based on environment flag
+export const genai = useVertexAI 
+  ? new GoogleGenAI({
+      vertexai: true,
+      project: process.env.GOOGLE_CLOUD_PROJECT,
+      location: process.env.GOOGLE_CLOUD_LOCATION || 'us-central1',
+    })
+  : new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export const MODEL = 'gemini-1.5-flash';
 

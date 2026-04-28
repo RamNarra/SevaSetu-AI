@@ -50,6 +50,7 @@ export enum ReportStatus {
 
 export type ReportSource = 'paste' | 'upload' | 'survey' | 'field_note';
 export type OutboxEventStatus = 'QUEUED' | 'SYNCING' | 'SYNCED' | 'FAILED';
+export type NetworkClass = '4g' | '3g' | '2g' | 'slow-2g' | 'offline';
 
 // ---- Firestore Document Interfaces ----
 
@@ -82,6 +83,18 @@ export interface VolunteerProfile {
   fatigueScore?: number; // 0-100
   lastAssigned?: Timestamp;
   coordinates?: { lat: number; lng: number };
+}
+
+export interface VolunteerPresence {
+  id?: string;
+  uid: string;
+  geohash: string;
+  lat: number;
+  lng: number;
+  lastSeenAt: Timestamp;
+  batteryLevel: number;
+  networkClass: NetworkClass;
+  activeCampId?: string | null;
 }
 
 export interface RawReport {

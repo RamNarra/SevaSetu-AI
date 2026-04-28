@@ -1,280 +1,304 @@
 'use client';
+
 import PageShell from '@/components/layout/PageShell';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Activity, ClipboardList, Stethoscope, Pill, PhoneForwarded,
-  ArrowRight, ChevronRight, UserPlus, Clock, AlertTriangle,
-  CheckCircle2, Loader2
+import { 
+  Clock, Package, MapPin, Loader2, AlertTriangle, User,
+  CheckCircle2, Syringe, Plus, ClipboardList
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { subscribeToCollection, updateDocument, getCollection, addDocument, where } from '@/lib/firebase/firestore';
-import { PatientVisit, VisitStage, CampPlan, MedicineStock, UrgencyLevel } from '@/types';
-import { urgencyBgColor } from '@/lib/utils';
-import { useAuth } from '@/contexts/AuthContext';
-import { Timestamp } from 'firebase/firestore/lite';
+import { subscribeToCollection, getCollection } from '@/lib/firebase/firestore';
+import { VolunteerProfile } from '@/types';
 import toast from 'react-hot-toast';
 
-const stages = [
-  { key: VisitStage.REGISTERED, label: 'Registration', icon: ClipboardList, color: '#D4622B' },
-  { key: VisitStage.TRIAGED, label: 'Triage', icon: Activity, color: '#D97706' },
-  { key: VisitStage.IN_CONSULTATION, label: 'Consultation', icon: Stethoscope, color: '#2D6A4F' },
-  { key: VisitStage.AT_PHARMACY, label: 'Pharmacy', icon: Pill, color: '#7C3AED' },
-  { key: VisitStage.COMPLETED, label: 'Completed', icon: CheckCircle2, color: '#65A30D' },
-];
+interface AssignmentEvent {
+  timestamp: string;
+  type: string;
+  message: string;
+  actor: string;
+}
 
-const nextStageMap: Record<string, VisitStage | null> = {
-  [VisitStage.REGISTERED]: VisitStage.TRIAGED,
-  [VisitStage.TRIAGED]: VisitStage.IN_CONSULTATION,
-  [VisitStage.IN_CONSULTATION]: VisitStage.AT_PHARMACY,
-  [VisitStage.AT_PHARMACY]: VisitStage.COMPLETED,
-  [VisitStage.COMPLETED]: null,
-};
+interface ActiveAssignment {
+  id: string;
+  volunteerId: string;
+  campId: string;
+  role: string;
+  assignedAt: { seconds: number; nanoseconds: number } | string | Date;
+  eventLog?: AssignmentEvent[];
+  // Joined fields
+  volunteer?: VolunteerProfile;
+  hoursElapsed?: number;
+}
 
-export default function OperationsPage() {
-  const [visits, setVisits] = useState<PatientVisit[]>([]);
-  const [camps, setCamps] = useState<CampPlan[]>([]);
-  const [activeCampId, setActiveCampId] = useState<string>('');
+interface MedicineStock {
+  id: string;
+  name: string;
+  currentStock: number;
+}
+
+export default function ActiveDeploymentsPage() {
+  const [assignments, setAssignments] = useState<ActiveAssignment[]>([]);
+  const [volunteers, setVolunteers] = useState<Map<string, VolunteerProfile>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [movingId, setMovingId] = useState<string | null>(null);
+  const [medicines, setMedicines] = useState<MedicineStock[]>([]);
+  const [selectedAssignment, setSelectedAssignment] = useState<ActiveAssignment | null>(null);
+
+  const [dispenseMedicineId, setDispenseMedicineId] = useState('');
+  const [dispenseAmount, setDispenseAmount] = useState(1);
+  const [dispensing, setDispensing] = useState(false);
 
   useEffect(() => {
-    getCollection<CampPlan>('camp_plans').then((data) => {
-      setCamps(data);
-      // Prefer ACTIVE camp, then PLANNED camp with assigned patient visits
-      const active = data.find((c) => c.status === 'ACTIVE')
-        || data.sort((a, b) => (b.predictedTurnout || 0) - (a.predictedTurnout || 0)).find((c) => c.status === 'PLANNED');
-      if (active?.id) setActiveCampId(active.id);
+    // Preload volunteers and stock
+    Promise.all([
+      getCollection<VolunteerProfile>('volunteer_profiles'),
+      getCollection<MedicineStock>('medicine_stock')
+    ]).then(([volData, medData]) => {
+      const vMap = new Map();
+      volData.forEach(v => vMap.set(v.userId || v.id, v));
+      setVolunteers(vMap);
+      setMedicines(medData);
     });
-  }, []);
 
-  // Real-time listener for patient visits
-  useEffect(() => {
-    if (!activeCampId) {
-      // Load all visits if no specific camp
-      const unsub = subscribeToCollection<PatientVisit>(
-        'patient_visits',
-        (data) => {
-          setVisits(data);
-          setLoading(false);
-        }
-      );
-      return unsub;
-    }
-
-    const unsub = subscribeToCollection<PatientVisit>(
-      'patient_visits',
+    // Real-time listener for assignments
+    const unsub = subscribeToCollection<ActiveAssignment>(
+      'assignments',
       (data) => {
-        setVisits(data);
+        setAssignments(data);
         setLoading(false);
-      },
-      where('campId', '==', activeCampId)
+        // Refresh medicines as well just in case stock changes
+        getCollection<MedicineStock>('medicine_stock').then(setMedicines);
+      }
     );
 
     return unsub;
-  }, [activeCampId]);
+  }, []);
 
-  const { user } = useAuth();
+  const handleDispense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAssignment || !dispenseMedicineId || dispenseAmount <= 0) return;
+    setDispensing(true);
 
-  async function dispenseMedicines(visit: PatientVisit) {
-    if (!visit.prescriptions || visit.prescriptions.length === 0 || !visit.campId) return;
     try {
-      const stock = await getCollection<MedicineStock>('medicine_stock', where('campId', '==', visit.campId));
-      for (const rx of visit.prescriptions) {
-        const match = stock.find((m) => m.medicineName.toLowerCase().includes(rx.toLowerCase()) || rx.toLowerCase().includes(m.medicineName.toLowerCase()));
-        if (match?.id) {
-          await updateDocument('medicine_stock', match.id, {
-            quantityDispensed: (match.quantityDispensed || 0) + 1,
-          });
-          await addDocument('dispense_logs', {
-            visitId: visit.id,
-            campId: visit.campId,
-            medicineId: match.id,
-            medicineName: match.medicineName,
-            quantity: 1,
-            dispensedBy: user?.uid || '',
-            dispensedAt: Timestamp.now(),
-          });
-        }
-      }
-      if (visit.prescriptions.length > 0) {
-        toast.success(`Dispensed ${visit.prescriptions.length} prescription(s) for ${visit.patientName}`);
-      }
-    } catch (err) {
-      console.error('Dispense error:', err);
-    }
-  }
+      const res = await fetch('/api/operations/dispense', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignmentId: selectedAssignment.id,
+          medicineId: dispenseMedicineId,
+          amountDispensed: dispenseAmount,
+          dispensedBy: selectedAssignment.volunteer?.displayName || 'Unknown'
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
 
-  async function moveToNextStage(visit: PatientVisit) {
-    if (!visit.id) return;
-    const nextStage = nextStageMap[visit.stage];
-    if (!nextStage) return;
-
-    setMovingId(visit.id);
-    try {
-      // Auto-dispense medicines when completing pharmacy stage
-      if (visit.stage === VisitStage.AT_PHARMACY && nextStage === VisitStage.COMPLETED) {
-        await dispenseMedicines(visit);
-      }
-      await updateDocument('patient_visits', visit.id, { stage: nextStage });
-      toast.success(`${visit.patientName} → ${nextStage.replace('_', ' ')}`);
-    } catch (error) {
-      console.error(error);
-      toast.error('Failed to update stage');
+      toast.success('Dispense logged via transaction successfully');
+      setDispenseAmount(1);
+      setDispenseMedicineId('');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error logging dispense');
     } finally {
-      setMovingId(null);
+      setDispensing(false);
     }
-  }
+  };
 
-  const totalPatients = visits.length;
-  const completed = visits.filter((v) => v.stage === VisitStage.COMPLETED).length;
-  const critical = visits.filter((v) => v.triagePriority === 'CRITICAL').length;
-  const activeCamp = camps.find((c) => c.id === activeCampId);
+  const enrichAssignment = (a: ActiveAssignment) => {
+    const vol = volunteers.get(a.volunteerId) || Object.values(Object.fromEntries(volunteers)).find(v => v.id === a.volunteerId);
+    let msElapsed = 0;
+    if (a.assignedAt) {
+      const timeMs = 
+        typeof a.assignedAt === 'object' && 'seconds' in a.assignedAt 
+          ? a.assignedAt.seconds * 1000 
+          : new Date(a.assignedAt).getTime();
+      msElapsed = Date.now() - timeMs;
+    }
+    return {
+      ...a,
+      volunteer: vol,
+      hoursElapsed: msElapsed / (1000 * 60 * 60)
+    };
+  };
+
+  const activeAssignments = assignments.map(enrichAssignment).filter(a => a.hoursElapsed !== undefined && a.hoursElapsed >= 0);
+
+  if (loading) {
+    return (
+      <PageShell title="Operations Center" subtitle="Live Deployment Tracking">
+        <div className="flex justify-center items-center h-64"><Loader2 className="w-8 h-8 text-[#D4622B] animate-spin" /></div>
+      </PageShell>
+    );
+  }
 
   return (
-    <PageShell
-      title="Camp Operations"
-      subtitle="Real-time patient flow management"
-      actions={
-        <div className="flex items-center gap-3">
-          {camps.length > 0 && (
-            <select
-              value={activeCampId}
-              onChange={(e) => setActiveCampId(e.target.value)}
-              className="px-3 py-2 rounded-xl border border-[#E5E2DC] text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#D4622B]/30"
-            >
-              <option value="">All Camps</option>
-              {camps.map((c) => (
-                <option key={c.id} value={c.id}>{c.title} ({c.status})</option>
-              ))}
-            </select>
-          )}
-        </div>
-      }
-    >
-      {/* Live Stats Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        {[
-          { icon: UserPlus, label: 'Total Patients', value: totalPatients, color: '#D4622B' },
-          { icon: CheckCircle2, label: 'Completed', value: completed, color: '#65A30D' },
-          { icon: Clock, label: 'In Queue', value: totalPatients - completed, color: '#D97706' },
-          { icon: AlertTriangle, label: 'Critical', value: critical, color: '#DC2626' },
-        ].map((stat, i) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05 }}
-            className="card !p-3 flex items-center gap-3"
-          >
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `${stat.color}15` }}>
-              <stat.icon className="w-4 h-4" style={{ color: stat.color }} />
-            </div>
-            <div>
-              <p className="text-xl font-bold text-[#1A1A1A]">{stat.value}</p>
-              <p className="text-xs text-[#6B7280]">{stat.label}</p>
-            </div>
-          </motion.div>
-        ))}
-      </div>
+    <PageShell title="Operations Center" subtitle="Live Deployment Tracking">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Kanban / Deployment Tracking */}
+        <div className="col-span-2">
+          <div className="bg-white rounded-xl shadow-sm border border-[#E5E2DC] p-5">
+            <h2 className="text-lg font-bold text-[#1A1A1A] mb-4 flex items-center justify-between">
+              Active Deployments
+              <span className="text-sm font-normal px-3 py-1 bg-[#D4622B]/10 text-[#D4622B] rounded-full">
+                {activeAssignments.length} On Ground
+              </span>
+            </h2>
 
-      {/* Kanban Columns */}
-      <div className="flex gap-4 overflow-x-auto pb-4">
-        {stages.map((stage, i) => {
-          const stageVisits = visits
-            .filter((v) => v.stage === stage.key)
-            .sort((a, b) => {
-              const prio = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-              return (prio[a.triagePriority as keyof typeof prio] || 3) - (prio[b.triagePriority as keyof typeof prio] || 3);
-            });
-
-          return (
-            <motion.div
-              key={stage.key}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.08 }}
-              className="flex-shrink-0 w-72"
-            >
-              {/* Column Header */}
-              <div className="flex items-center gap-2 mb-3 px-1">
-                <stage.icon className="w-4 h-4" style={{ color: stage.color }} />
-                <h3 className="font-semibold text-sm text-[#1A1A1A]">{stage.label}</h3>
-                <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: `${stage.color}15`, color: stage.color }}>{stageVisits.length}</span>
+            {activeAssignments.length === 0 ? (
+              <div className="text-center py-10 text-[#6B7280] border-2 border-dashed border-[#E5E2DC] rounded-xl bg-[#FAFAFA]">
+                No active deployments right now
               </div>
-
-              {/* Column Body */}
-              <div className="space-y-2 min-h-[400px] p-2 rounded-2xl bg-[#FAF9F6] border border-[#E5E2DC]">
-                {loading ? (
-                  Array(2).fill(0).map((_, j) => <div key={j} className="skeleton h-24 w-full" />)
-                ) : stageVisits.length === 0 ? (
-                  <p className="text-xs text-[#6B7280] text-center py-8 opacity-60">No patients</p>
-                ) : (
-                  <AnimatePresence mode="popLayout">
-                    {stageVisits.map((visit) => (
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <AnimatePresence mode="popLayout">
+                  {activeAssignments.map((a) => {
+                    const isStuck = a.hoursElapsed! >= 4.0;
+                    
+                    return (
                       <motion.div
-                        key={visit.id}
+                        key={a.id}
                         layout
-                        initial={{ opacity: 0, scale: 0.9 }}
+                        initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.9, x: 50 }}
-                        whileHover={{ y: -2 }}
-                        className="card !p-3 shadow-sm"
+                        className={`relative p-4 rounded-xl border ${
+                          isStuck 
+                            ? 'border-red-500 bg-red-50/50 shadow-[0_0_15px_rgba(239,68,68,0.15)]' 
+                            : 'border-[#E5E2DC] bg-[#FAFAFA]'
+                        } cursor-pointer hover:border-[#D4622B] transition-all`}
+                        onClick={() => setSelectedAssignment(a)}
                       >
-                        <div className="flex items-start justify-between mb-1">
-                          <p className="font-medium text-sm text-[#1A1A1A]">{visit.patientName}</p>
-                          <span className={`badge text-[10px] ${urgencyBgColor(visit.triagePriority)}`}>
-                            {visit.triagePriority}
-                          </span>
-                        </div>
-                        <p className="text-xs text-[#6B7280]">{visit.age}y, {visit.gender === 'M' ? 'Male' : visit.gender === 'F' ? 'Female' : 'Other'}</p>
-                        <p className="text-xs text-[#6B7280] mt-1 line-clamp-2">{visit.chiefComplaint}</p>
-
-                        {/* Tags */}
-                        <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                          {visit.referralNeeded && (
-                            <span className="badge text-[10px] bg-purple-50 text-purple-700 border-purple-200">
-                              <PhoneForwarded className="w-2.5 h-2.5" /> Referral
-                            </span>
-                          )}
-                          {visit.followupNeeded && (
-                            <span className="badge text-[10px] bg-blue-50 text-blue-700 border-blue-200">Follow-up</span>
-                          )}
-                          {visit.prescriptions && visit.prescriptions.length > 0 && (
-                            <span className="badge text-[10px] bg-green-50 text-green-700 border-green-200">
-                              {visit.prescriptions.length} Rx
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Move button */}
-                        {stage.key !== VisitStage.COMPLETED && (
-                          <motion.button
-                            whileHover={{ scale: 1.03 }}
-                            whileTap={{ scale: 0.97 }}
-                            onClick={() => moveToNextStage(visit)}
-                            disabled={movingId === visit.id}
-                            className="mt-2 w-full flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
-                            style={{
-                              background: `${stage.color}10`,
-                              color: stage.color,
-                              border: `1px solid ${stage.color}30`,
-                            }}
-                          >
-                            {movingId === visit.id ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <>Move <ChevronRight className="w-3 h-3" /></>
-                            )}
-                          </motion.button>
+                        {isStuck && (
+                          <div className="absolute -top-2 -right-2 bg-red-600 text-white p-1.5 rounded-full animate-pulse shadow-md z-10">
+                            <AlertTriangle className="w-3 h-3" />
+                          </div>
                         )}
+
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-[#1B2E25] text-white flex items-center justify-center font-bold text-xs shrink-0">
+                              <User className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-bold text-[#1A1A1A]">{a.volunteer?.displayName || 'Unknown Volunteer'}</h3>
+                              <p className="text-xs text-[#6B7280]">{a.role}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 mt-4">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-[#6B7280] flex items-center gap-1"><MapPin className="w-3 h-3" /> Camp</span>
+                            <span className="font-semibold text-[#1A1A1A] truncate max-w-[120px]">{a.campId}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-[#6B7280] flex items-center gap-1"><Clock className="w-3 h-3" /> Duration</span>
+                            <span className={`font-bold ${isStuck ? 'text-red-600' : 'text-[#65A30D]'}`}>
+                              {a.hoursElapsed!.toFixed(1)} hrs
+                            </span>
+                          </div>
+                        </div>
                       </motion.div>
-                    ))}
-                  </AnimatePresence>
-                )}
+                    );
+                  })}
+                </AnimatePresence>
               </div>
-            </motion.div>
-          );
-        })}
+            )}
+          </div>
+        </div>
+
+        {/* Audit Trail & Tracking Console */}
+        <div className="col-span-1">
+          <div className="bg-white rounded-xl shadow-sm border border-[#E5E2DC] p-5 h-full flex flex-col">
+            <h2 className="text-lg font-bold text-[#1A1A1A] mb-4 flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-[#2D6A4F]" /> Tracking Console
+            </h2>
+
+            {!selectedAssignment ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center opacity-60 py-10">
+                <Package className="w-12 h-12 mb-3 text-[#D4622B]" />
+                <p className="text-sm">Select an active deployment to log events and view history</p>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col space-y-6">
+                
+                {/* Active Assignment Header */}
+                <div className="p-3 bg-[#FAFAFA] rounded-lg border border-[#E5E2DC]">
+                  <h3 className="font-bold text-sm text-[#1A1A1A]">{selectedAssignment.volunteer?.displayName || 'Unknown'}</h3>
+                  <p className="text-xs text-[#6B7280]">{selectedAssignment.role}</p>
+                </div>
+
+                {/* Dispense Action */}
+                <div className="bg-[#FAF9F6] p-4 rounded-xl border border-[#D4622B]/20">
+                  <h4 className="text-sm font-bold text-[#1A1A1A] mb-3 flex items-center gap-2">
+                    <Syringe className="w-4 h-4 text-[#D4622B]" /> Log Dispense Event
+                  </h4>
+                  <form onSubmit={handleDispense} className="space-y-3">
+                    <select 
+                      value={dispenseMedicineId} 
+                      onChange={e => setDispenseMedicineId(e.target.value)}
+                      className="w-full text-sm p-2 rounded-lg border border-[#E5E2DC] outline-none focus:ring-2 focus:ring-[#D4622B]/50"
+                      required
+                    >
+                      <option value="">Select Item...</option>
+                      {medicines.map(m => (
+                        <option value={m.id} key={m.id}>{m.name} (Stock: {m.currentStock})</option>
+                      ))}
+                    </select>
+
+                    <div className="flex gap-2">
+                      <input 
+                        type="number" 
+                        min="1" 
+                        value={dispenseAmount}
+                        onChange={e => setDispenseAmount(Number(e.target.value))}
+                        className="w-20 text-sm p-2 rounded-lg border border-[#E5E2DC]"
+                        required
+                      />
+                      <button 
+                        type="submit" 
+                        disabled={dispensing || !dispenseMedicineId}
+                        className="flex-1 bg-[#D4622B] text-white text-sm font-medium py-2 rounded-lg hover:bg-[#B34D20] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {dispensing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                        Log Event
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* Live Event Log */}
+                <div className="flex-1">
+                  <h4 className="text-xs font-bold text-[#1B2E25]/60 uppercase tracking-wider mb-4 border-b border-[#E5E2DC] pb-2">Live Event Log</h4>
+                  
+                  {(!selectedAssignment.eventLog || selectedAssignment.eventLog.length === 0) ? (
+                    <p className="text-xs text-center text-[#6B7280] py-4">No events logged yet.</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {selectedAssignment.eventLog.map((ev, i) => (
+                        <div key={i} className="flex items-start gap-3">
+                          <div className="w-6 h-6 rounded-full bg-[#1B2E25]/10 flex flex-col items-center justify-center shrink-0 mt-0.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-[#1B2E25]" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span className="text-xs font-bold text-[#1A1A1A]">{ev.type}</span>
+                              <span className="text-[10px] bg-[#FAFAFA] border border-[#E5E2DC] px-1.5 py-0.5 rounded text-[#6B7280]">
+                                {new Date(ev.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            <p className="text-xs text-[#1A1A1A]/80 leading-snug">{ev.message}</p>
+                            {ev.actor && <p className="text-[10px] text-[#6B7280] mt-1 line-clamp-1">— {ev.actor}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
+          </div>
+        </div>
+
       </div>
     </PageShell>
   );

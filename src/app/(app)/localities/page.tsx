@@ -109,7 +109,7 @@ export default function LocalitiesPage() {
           weight: loc.urgencyScore,
         }));
 
-        const heatmap = new HeatmapLayer({
+        new HeatmapLayer({
           data: heatmapData,
           map,
           radius: 40,

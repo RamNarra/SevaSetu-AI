@@ -71,6 +71,9 @@ export async function updateDocument(
   docId: string,
   data: Partial<DocumentData>
 ): Promise<void> {
+  if (demoDb.isDemoMode()) {
+    return;
+  }
   await updateDoc(doc(db, collectionName, docId), data);
 }
 
@@ -78,6 +81,9 @@ export async function deleteDocument(
   collectionName: string,
   docId: string
 ): Promise<void> {
+  if (demoDb.isDemoMode()) {
+    return;
+  }
   await deleteDoc(doc(db, collectionName, docId));
 }
 

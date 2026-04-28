@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { ReportStatus } from '@/types';
+import { ExtractedSignal, ReportStatus } from '@/types';
 import { GoogleGenAI } from '@google/genai';
 import { parseJsonResponse } from '@/lib/ai/client';
 import { calculateUrgencyScore } from '@/lib/scoring/urgency-v2';
@@ -226,7 +226,7 @@ export async function POST(request: NextRequest) {
           .limit(50)
           .get();
 
-        const signals = recentSignalsSnap.docs.map(doc => doc.data() as any);
+        const signals: ExtractedSignal[] = recentSignalsSnap.docs.map((doc) => doc.data() as ExtractedSignal);
         
         const newScore = calculateUrgencyScore(signals, { vulnerabilityIndex });
         

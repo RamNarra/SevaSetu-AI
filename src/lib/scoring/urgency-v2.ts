@@ -28,6 +28,18 @@ const URGE_WEIGHTS = {
   BASE: 10,
 };
 
+function getSignalTimestamp(signal: ExtractedSignal): number {
+  if (signal.createdAt && typeof signal.createdAt.toMillis === 'function') {
+    return signal.createdAt.toMillis();
+  }
+
+  if (signal.processedAt && typeof signal.processedAt.toMillis === 'function') {
+    return signal.processedAt.toMillis();
+  }
+
+  return Date.now();
+}
+
 export function calculateUrgencyScore(
   signals: ExtractedSignal[],
   historicalData: LocalityHistoricalData
@@ -64,8 +76,8 @@ export function analyzeUrgencyScore(
   let signalCount = 0;
 
   // Track reports in the last 72 hours
-  const recentReports = signals.filter(signal => {
-    const sigTime = signal.createdAt?.toMillis?.() || new Date(signal.createdAt as any || Date.now()).getTime();
+  const recentReports = signals.filter((signal) => {
+    const sigTime = getSignalTimestamp(signal);
     return (now - sigTime) <= 72 * 60 * 60 * 1000;
   });
 
@@ -76,13 +88,13 @@ export function analyzeUrgencyScore(
   // Analyze features
   let oldestSignalAgeDays = 0;
   
-  signals.forEach(signal => {
-    const sigTime = signal.createdAt?.toMillis?.() || new Date(signal.createdAt as any || Date.now()).getTime();
+  signals.forEach((signal) => {
+    const sigTime = getSignalTimestamp(signal);
     const ageDays = (now - sigTime) / (1000 * 60 * 60 * 24);
     if (ageDays > oldestSignalAgeDays) oldestSignalAgeDays = ageDays;
 
     if (signal.urgencySignals && signal.urgencySignals.length > 0) {
-      signal.urgencySignals.forEach(u => {
+      signal.urgencySignals.forEach((u) => {
         // Multiply by confidence of the individual urgency signal
         const conf = u.confidence || 0.5;
         
@@ -111,7 +123,7 @@ export function analyzeUrgencyScore(
       });
     }
 
-    signal.needs?.forEach(n => {
+    signal.needs?.forEach((n) => {
       const conf = n.confidence || 0.5;
       medicalScore += n.severity * 2 * conf;
     });

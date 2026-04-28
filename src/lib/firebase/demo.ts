@@ -9,8 +9,9 @@ import {
   seedCampPlans,
   seedPatientVisits,
   seedMedicineStock,
+  seedVolunteerPresence,
 } from '@/data/seed';
-import { Locality, VolunteerProfile, RawReport, ExtractedSignal, CampPlan, PatientVisit, MedicineStock } from '@/types';
+import { Locality, VolunteerProfile, RawReport, ExtractedSignal, CampPlan, PatientVisit, MedicineStock, VolunteerPresence } from '@/types';
 
 type DemoCollectionKey =
   | 'localities'
@@ -19,7 +20,8 @@ type DemoCollectionKey =
   | 'extractedReports'
   | 'camps'
   | 'visits'
-  | 'medicines';
+  | 'medicines'
+  | 'volunteerPresence';
 
 type DemoIdentifiable = {
   id?: string;
@@ -34,6 +36,7 @@ const firestoreToDemoCollection: Record<string, DemoCollectionKey> = {
   camp_plans: 'camps',
   patient_visits: 'visits',
   medicine_stock: 'medicines',
+  volunteer_presence: 'volunteerPresence',
 };
 
 /**
@@ -62,6 +65,7 @@ class DemoDatabase {
   camps: CampPlan[] = seedCampPlans as CampPlan[];
   visits: PatientVisit[] = seedPatientVisits as PatientVisit[];
   medicines: MedicineStock[] = seedMedicineStock as MedicineStock[];
+  volunteerPresence: VolunteerPresence[] = seedVolunteerPresence as VolunteerPresence[];
 
   private resolveCollectionKey(collectionName: string): DemoCollectionKey | null {
     return firestoreToDemoCollection[collectionName] ?? null;

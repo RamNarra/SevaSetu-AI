@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -26,6 +27,7 @@ import { useState, useEffect } from 'react';
 const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Command Center', href: '/command-center', icon: Sparkles },
+  { label: 'Workbench', href: '/workbench', icon: Shield },
   { label: 'Reports', href: '/reports', icon: FileText },
   { label: 'Localities', href: '/localities', icon: MapPin },
   { label: 'Camp Planner', href: '/planner', icon: CalendarRange },
@@ -164,9 +166,12 @@ export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean;
             className="flex items-center gap-3 px-3 py-2"
           >
             {user.photoURL ? (
-              <img
+              <Image
                 src={user.photoURL}
-                alt=""
+                alt={`${user.displayName || 'User'} profile photo`}
+                width={32}
+                height={32}
+                unoptimized
                 className="w-8 h-8 rounded-full ring-2 ring-[#2D6A4F]"
               />
             ) : (

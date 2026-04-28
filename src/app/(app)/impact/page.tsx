@@ -3,11 +3,11 @@ import PageShell from '@/components/layout/PageShell';
 import { motion } from 'framer-motion';
 import {
   BarChart3, Users, Pill, AlertTriangle, CheckCircle2, Clock,
-  Sparkles, Loader2, Calendar, MapPin, HeartPulse
+  Sparkles, Loader2, Calendar, HeartPulse
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getCollection } from '@/lib/firebase/firestore';
-import { CampPlan, PatientVisit, MedicineStock, DispenseLog, Followup, VisitStage } from '@/types';
+import { CampPlan, PatientVisit, MedicineStock, Followup, VisitStage } from '@/types';
 import toast from 'react-hot-toast';
 
 /**

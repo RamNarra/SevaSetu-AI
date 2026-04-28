@@ -15,10 +15,11 @@ import {
   X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { CampPlan, ExtractedSignal, Locality, VolunteerProfile } from '@/types';
+import { CampPlan, ExtractedSignal, Locality, VolunteerPresence, VolunteerProfile } from '@/types';
 import { analyzeUrgencyScore, type UrgencyV2Breakdown } from '@/lib/scoring/urgency-v2';
 import { cn, formatNumber, roleLabel, urgencyColor } from '@/lib/utils';
 import { getCollection, orderBy } from '@/lib/firebase/firestore';
+import VolunteerCoverageMap from '@/components/command-center/VolunteerCoverageMap';
 
 interface SimulationCandidate {
   volunteerId: string;
@@ -61,18 +62,20 @@ const urgencySignalWeights: Record<string, number> = {
 };
 
 async function fetchCommandCenterData() {
-  const [localities, reports, volunteers, camps] = await Promise.all([
+  const [localities, reports, volunteers, camps, presence] = await Promise.all([
     getCollection<Locality>('localities', orderBy('urgencyScore', 'desc')),
-    getCollection<ExtractedSignal>('extracted_reports'),
+    getCollection<ExtractedSignal & { status?: string }>('extracted_reports'),
     getCollection<VolunteerProfile>('volunteer_profiles'),
     getCollection<CampPlan>('camp_plans'),
+    getCollection<VolunteerPresence>('volunteer_presence', orderBy('lastSeenAt', 'desc')),
   ]);
 
   return {
     localities: [...localities].sort((a, b) => b.urgencyScore - a.urgencyScore),
-    reports,
+    reports: reports.filter(r => r.status === 'APPROVED'),
     volunteers,
     camps,
+    presence,
   };
 }
 
@@ -332,6 +335,7 @@ export default function CommandCenterClient() {
   const [reports, setReports] = useState<ExtractedSignal[]>([]);
   const [volunteers, setVolunteers] = useState<VolunteerProfile[]>([]);
   const [camps, setCamps] = useState<CampPlan[]>([]);
+  const [presence, setPresence] = useState<VolunteerPresence[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [simulation, setSimulation] = useState<SimulationState | null>(null);
@@ -348,6 +352,7 @@ export default function CommandCenterClient() {
         setReports(data.reports);
         setVolunteers(data.volunteers);
         setCamps(data.camps);
+        setPresence(data.presence);
       } catch (error) {
         console.error('Command Center load error:', error);
         if (!cancelled) {
@@ -375,6 +380,7 @@ export default function CommandCenterClient() {
       setReports(data.reports);
       setVolunteers(data.volunteers);
       setCamps(data.camps);
+      setPresence(data.presence);
       toast.success('Operational telemetry refreshed.');
     } catch (error) {
       console.error('Command Center refresh error:', error);
@@ -436,16 +442,36 @@ export default function CommandCenterClient() {
     }
   }
 
-  function handleDispatch(zone: CommandCenterZone, candidate: SimulationCandidate) {
-    console.log('Dispatch queued', {
-      localityId: zone.locality.id,
-      localityName: zone.locality.name,
-      volunteerId: candidate.volunteerId,
-      volunteerName: candidate.displayName,
-      matchScore: candidate.matchScore,
-    });
+  async function handleDispatch(zone: CommandCenterZone, candidate: SimulationCandidate) {
+    if (!zone.locality.id || !candidate.volunteerId) {
+      toast.error('Missing ID for dispatch');
+      return;
+    }
 
-    toast.success(`Dispatch queued for ${candidate.displayName}.`);
+    try {
+      const res = await fetch('/api/matching/dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          volunteerId: candidate.volunteerId,
+          campId: zone.locality.id, // Or a specific active camp ID if the zone maps to one, we'll use localityId as fallback
+          role: candidate.role,
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to dispatch');
+      }
+
+      toast.success(`Dispatch successful! ${candidate.displayName} is assigned.`);
+      
+      // Optionally, we could remove the candidate from simulation state locally here
+    } catch (err) {
+      console.error('Dispatch transaction failed', err);
+      const errorMessage = err instanceof Error ? err.message : 'Error occurred during dispatch';
+      toast.error(errorMessage);
+    }
   }
 
   const zones = localities.slice(0, 3).map((locality) => buildZone(locality, reports));
@@ -460,6 +486,13 @@ export default function CommandCenterClient() {
   );
 
   const volunteerLookup = new Map(volunteers.map((volunteer) => [volunteer.userId || volunteer.id || '', volunteer]));
+  const trackedResponders = presence.filter((entry) => Number.isFinite(entry.lat) && Number.isFinite(entry.lng));
+  const degradedResponders = trackedResponders.filter((entry) => (
+    entry.batteryLevel < 20 ||
+    entry.networkClass === '2g' ||
+    entry.networkClass === 'slow-2g' ||
+    entry.networkClass === 'offline'
+  ));
   const reserveRoster = volunteers
     .map((volunteer) => ({ volunteer, fatigue: getFatigueMeta(volunteer) }))
     .filter(({ volunteer }) => volunteer.availability === 'AVAILABLE')
@@ -551,6 +584,14 @@ export default function CommandCenterClient() {
                 value={String(availableReserve)}
                 caption="Eligible backup responders ready for a new dispatch."
                 accent="linear-gradient(180deg, rgba(52, 211, 153, 0.18) 0%, rgba(52, 211, 153, 0) 100%)"
+              />
+            </div>
+
+            <div className="mt-8">
+              <VolunteerCoverageMap
+                localities={localities}
+                presence={presence}
+                volunteerLookup={volunteerLookup}
               />
             </div>
 
@@ -740,6 +781,11 @@ export default function CommandCenterClient() {
                         label: 'Reserve Pool',
                         value: formatNumber(reserveRoster.length),
                         note: 'Available volunteers ranked by fatigue before matching.',
+                      },
+                      {
+                        label: 'Tracked Responders',
+                        value: formatNumber(trackedResponders.length),
+                        note: `${degradedResponders.length} devices currently constrained by low battery or weak connectivity.`,
                       },
                     ].map((item) => (
                       <div key={item.label} className="rounded-2xl border border-white/8 bg-zinc-950/70 p-4">

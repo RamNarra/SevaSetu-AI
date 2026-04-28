@@ -1,11 +1,11 @@
 'use client';
 import PageShell from '@/components/layout/PageShell';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Star, Search, CheckCircle2, MapPin, Target, Calendar, Sparkles } from 'lucide-react';
+import { Users, Star, CheckCircle2, Target, Sparkles, ShieldAlert, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { getCollection } from '@/lib/firebase/firestore';
-import { VolunteerProfile, Assignment, CampPlan, UserRole } from '@/types';
-import { roleLabel, getInitials, formatDate } from '@/lib/utils';
+import { getCollection, orderBy } from '@/lib/firebase/firestore';
+import { VolunteerProfile, CampPlan, UserRole } from '@/types';
+import { roleLabel, getInitials } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
 const roleFilters = [
@@ -19,7 +19,7 @@ const roleFilters = [
 function MatchScoreBar({ score }: { score: number }) {
   const color = score >= 80 ? '#2D6A4F' : score >= 60 ? '#D97706' : '#DC2626';
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 mt-2">
       <div className="flex-1 h-2 rounded-full bg-[#E5E2DC] overflow-hidden">
         <motion.div
           initial={{ width: 0 }}
@@ -34,26 +34,35 @@ function MatchScoreBar({ score }: { score: number }) {
   );
 }
 
+interface MatchCandidate {
+  volunteerId: string;
+  volunteer: VolunteerProfile;
+  matchScore: number;
+  explanation: string;
+  conflictAlert: boolean;
+}
+
 export default function AllocationPage() {
-  const [volunteers, setVolunteers] = useState<VolunteerProfile[]>([]);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [camps, setCamps] = useState<CampPlan[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [roleFilter, setRoleFilter] = useState('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedVol, setSelectedVol] = useState<VolunteerProfile | null>(null);
   const [selectedCamp, setSelectedCamp] = useState<string>('');
-  const [matchScores, setMatchScores] = useState<Record<string, { score: number; reasoning: string }>>({});
+  const [loading, setLoading] = useState(true);
   const [loadingAI, setLoadingAI] = useState(false);
+  const [candidates, setCandidates] = useState<MatchCandidate[]>([]);
+  
+  // Constraints
+  const [roleConstraint, setRoleConstraint] = useState('ALL');
+  const [langConstraint, setLangConstraint] = useState('');
+  const [maxDistance, setMaxDistance] = useState(50);
+  const [maxFatigue, setMaxFatigue] = useState(80);
+  const [genderSensitive, setGenderSensitive] = useState(false);
+  const [availableOnly, setAvailableOnly] = useState(true);
+  
+  const [assigningId, setAssigningId] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
-      getCollection<VolunteerProfile>('volunteer_profiles'),
-      getCollection<Assignment>('assignments'),
-      getCollection<CampPlan>('camp_plans'),
-    ]).then(([vols, asgns, cps]) => {
-      setVolunteers(vols);
-      setAssignments(asgns);
+      getCollection<CampPlan>('camp_plans', orderBy('createdAt', 'desc')),
+    ]).then(([cps]) => {
       setCamps(cps);
       if (cps.length > 0) setSelectedCamp(cps[0].id || '');
       setLoading(false);
@@ -61,319 +70,253 @@ export default function AllocationPage() {
   }, []);
 
   const currentCamp = camps.find((c) => c.id === selectedCamp);
-  const campAssignments = assignments.filter((a) => a.campId === selectedCamp);
-  const assignedVolIds = new Set(campAssignments.map((a) => a.volunteerId));
 
-  const filtered = volunteers.filter((vol) => {
-    if (roleFilter !== 'ALL' && vol.role !== roleFilter) return false;
-    if (searchQuery && !vol.displayName.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !vol.skills.some((s) => s.toLowerCase().includes(searchQuery.toLowerCase()))) return false;
-    return true;
-  });
-
-  const available = volunteers.filter((v) => v.availability === 'AVAILABLE');
-  const busy = volunteers.filter((v) => v.availability === 'BUSY');
-  const assigned = volunteers.filter((v) => assignedVolIds.has(v.userId));
-
-  async function getAIMatchScores() {
+  async function generateMatches() {
     if (!currentCamp) return;
     setLoadingAI(true);
+    setCandidates([]);
     try {
-      const res = await fetch('/api/ai/recommend', {
+      const constraints = {
+        roles: roleConstraint === 'ALL' ? [] : [roleConstraint],
+        language: langConstraint || undefined,
+        maxDistance,
+        maxFatigue,
+        genderSensitive,
+        availableOnly,
+      };
+
+      const res = await fetch('/api/allocation/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          campTitle: currentCamp.title,
-          localityName: currentCamp.localityId,
-          requiredRoles: currentCamp.requiredRoles,
-          volunteers: volunteers.map((v) => ({
-            id: v.userId,
-            name: v.displayName,
-            role: v.role,
-            skills: v.skills,
-            languages: v.languages,
-            availability: v.availability,
-            rating: v.rating,
-            completedCamps: v.completedCamps,
-            travelRadiusKm: v.travelRadiusKm,
-          })),
+          campId: currentCamp.id,
+          constraints,
         }),
       });
       const data = await res.json();
-      if (data.success && Array.isArray(data.result)) {
-        const scores: Record<string, { score: number; reasoning: string }> = {};
-        data.result.forEach((r: { volunteerId: string; matchScore: number; reasoning: string }) => {
-          scores[r.volunteerId] = { score: r.matchScore, reasoning: r.reasoning };
-        });
-        setMatchScores(scores);
-        toast.success('AI match scores loaded');
+      if (data.success && Array.isArray(data.matches)) {
+        setCandidates(data.matches);
+        toast.success(`Found ${data.matches.length} candidates`);
+      } else {
+        toast.error(data.error || 'Failed to find matches');
       }
-    } catch { toast.error('Failed to load match scores'); }
+    } catch { 
+      toast.error('Failed to load match scores'); 
+    }
     setLoadingAI(false);
   }
 
-  // Sort filtered by match score if available
-  const sortedFiltered = [...filtered].sort((a, b) => {
-    const scoreA = matchScores[a.userId]?.score || 0;
-    const scoreB = matchScores[b.userId]?.score || 0;
-    return scoreB - scoreA;
-  });
+  async function handleAssign(c: MatchCandidate) {
+    if (!currentCamp) return;
+    setAssigningId(c.volunteerId);
+    try {
+      const res = await fetch('/api/allocation/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campId: currentCamp.id,
+          volunteerId: c.volunteerId,
+          role: c.volunteer.role,
+          matchScore: c.matchScore,
+          matchReasoning: c.explanation,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`${c.volunteer.displayName} assigned!`);
+        // Remove locally
+        setCandidates(prev => prev.filter(x => x.volunteerId !== c.volunteerId));
+      } else {
+        toast.error(data.error || 'Assignment failed');
+      }
+    } catch (e) {
+      toast.error(String(e));
+    }
+    setAssigningId(null);
+  }
+
+  if (loading) {
+    return (
+      <PageShell title="Allocation Cockpit" subtitle="Intelligent Staffing">
+        <div className="flex justify-center items-center h-64"><Loader2 className="w-8 h-8 animate-spin text-[#F4A261]" /></div>
+      </PageShell>
+    );
+  }
 
   return (
-    <PageShell title="Volunteer Allocation" subtitle="Manage and assign volunteers to camp roles">
-      {/* Camp Selector + AI Button */}
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <div className="flex items-center gap-2 flex-1">
-          <Calendar className="w-4 h-4 text-[#6B7280]" />
-          <select
-            value={selectedCamp}
-            onChange={(e) => { setSelectedCamp(e.target.value); setMatchScores({}); }}
-            className="px-3 py-2 rounded-xl border border-[#E5E2DC] text-sm focus:outline-none focus:ring-2 focus:ring-[#D4622B]/30 bg-white"
-          >
-            <option value="">Select Camp</option>
-            {camps.map((c) => (
-              <option key={c.id} value={c.id}>{c.title} — {c.status}</option>
-            ))}
-          </select>
-        </div>
-        {currentCamp && (
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={getAIMatchScores}
-            disabled={loadingAI}
-            className="btn bg-gradient-to-r from-[#D4622B] to-[#F4A261] text-white text-sm px-4 py-2 flex items-center gap-2 disabled:opacity-50"
-          >
-            <Sparkles className="w-4 h-4" />
-            {loadingAI ? 'Analyzing...' : 'AI Match Scores'}
-          </motion.button>
-        )}
-      </div>
-
-      {/* Current Camp Info */}
-      {currentCamp && (
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="card mb-4 !py-3 flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Target className="w-4 h-4 text-[#D4622B]" />
-            <span className="text-sm font-semibold text-[#1A1A1A]">{currentCamp.title}</span>
-          </div>
-          <span className="text-xs text-[#6B7280]">{formatDate(currentCamp.scheduledDate)}</span>
-          <span className={`badge text-[10px] ${currentCamp.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : currentCamp.status === 'PLANNED' ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-600'}`}>
-            {currentCamp.status}
-          </span>
-          <div className="flex gap-2 ml-auto text-xs text-[#6B7280]">
-            {Object.entries(currentCamp.requiredRoles || {}).map(([role, count]) => (
-              <span key={role} className="badge bg-[#FAF9F6] border-[#E5E2DC]">
-                {roleLabel(role as UserRole)}: {count as number}
-              </span>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {/* Filters */}
-      <div className="flex items-center gap-3 mb-6 flex-wrap">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6B7280]" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name or skill..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#E5E2DC] text-sm focus:outline-none focus:ring-2 focus:ring-[#D4622B]/30"
-          />
-        </div>
-        <div className="flex items-center gap-1.5">
-          {roleFilters.map((filter) => (
-            <motion.button
-              key={filter.value}
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => setRoleFilter(filter.value)}
-              className={`px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                roleFilter === filter.value
-                  ? 'bg-[#D4622B] text-white shadow-sm'
-                  : 'bg-white border border-[#E5E2DC] text-[#6B7280] hover:border-[#D4622B]/30'
-              }`}
+    <PageShell title="Allocation Cockpit" subtitle="Constraint-Driven Staffing">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Left Column: Constraints & Configuration */}
+        <div className="lg:col-span-1 space-y-6">
+          
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#E5E2DC]">
+            <h2 className="text-lg font-bold text-[#1B2E25] mb-4 flex items-center justify-between">
+              Target Camp
+            </h2>
+            <select 
+              value={selectedCamp} 
+              onChange={(e) => setSelectedCamp(e.target.value)}
+              className="w-full p-3 rounded-xl border border-[#E5E2DC] bg-[#FAFAFA] text-sm focus:ring-2 focus:ring-[#2D6A4F] focus:border-[#2D6A4F] outline-none transition-all"
             >
-              {filter.label}
-            </motion.button>
-          ))}
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="flex gap-3 mb-6">
-        {[
-          { label: 'Available', count: available.length, color: '#65A30D' },
-          { label: 'Busy', count: busy.length, color: '#D97706' },
-          { label: 'Assigned', count: assigned.length, color: '#2D6A4F' },
-        ].map((s) => (
-          <div key={s.label} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-[#E5E2DC]">
-            <div className="w-2 h-2 rounded-full" style={{ background: s.color }} />
-            <span className="text-xs text-[#6B7280]">{s.label}: <span className="font-semibold text-[#1A1A1A]">{s.count}</span></span>
+              {camps.map(c => (
+                <option key={c.id} value={c.id}>{c.title} • {c.localityName}</option>
+              ))}
+            </select>
           </div>
-        ))}
-      </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* Volunteer Grid */}
-        <div className="lg:col-span-2">
-          <div className="grid md:grid-cols-2 gap-3">
-            {loading ? (
-              Array(6).fill(0).map((_, i) => <div key={i} className="card"><div className="skeleton h-36" /></div>)
-            ) : sortedFiltered.length === 0 ? (
-              <div className="col-span-full card text-center py-12 text-[#6B7280]">
-                <Users className="w-8 h-8 mx-auto mb-2 opacity-30" /><p className="text-sm">No volunteers match your filters</p>
-              </div>
-            ) : (
-              <AnimatePresence>
-                {sortedFiltered.map((vol, i) => {
-                  const match = matchScores[vol.userId];
-                  const isAssigned = assignedVolIds.has(vol.userId);
-                  return (
-                    <motion.div
-                      key={vol.id || vol.userId}
-                      layout
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ delay: i * 0.03 }}
-                      whileHover={{ y: -3, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.08)' }}
-                      onClick={() => setSelectedVol(vol)}
-                      className={`card cursor-pointer relative ${selectedVol?.userId === vol.userId ? 'ring-2 ring-[#D4622B]' : ''} ${isAssigned ? 'border-[#2D6A4F]/40 bg-[#2D6A4F]/[0.03]' : ''}`}
-                    >
-                      {isAssigned && (
-                        <div className="absolute top-2 right-2">
-                          <span className="badge bg-[#2D6A4F]/10 text-[#2D6A4F] border-[#2D6A4F]/20 text-[10px] font-bold">ASSIGNED</span>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#2D6A4F] to-[#40916C] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-                          {getInitials(vol.displayName)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-[#1A1A1A] truncate">{vol.displayName}</p>
-                          <p className="text-xs text-[#6B7280]">{roleLabel(vol.role)}</p>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <div className="flex items-center gap-1">
-                            <Star className="w-3.5 h-3.5 text-[#F4A261]" />
-                            <span className="text-sm font-bold text-[#1A1A1A]">{vol.rating}</span>
-                          </div>
-                          <span className={`badge text-[10px] ${
-                            vol.availability === 'AVAILABLE' ? 'bg-green-50 text-green-700 border-green-200' :
-                            vol.availability === 'BUSY' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                            'bg-gray-50 text-gray-600 border-gray-200'
-                          }`}>
-                            {vol.availability}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* AI Match Score */}
-                      {match && (
-                        <div className="mb-2">
-                          <MatchScoreBar score={match.score} />
-                          <p className="text-[10px] text-[#6B7280] mt-1 line-clamp-1">{match.reasoning}</p>
-                        </div>
-                      )}
-
-                      <div className="flex flex-wrap gap-1 mb-2">
-                        {vol.skills.slice(0, 3).map((s, j) => (
-                          <span key={j} className="badge bg-secondary-pale text-secondary border-secondary/20 text-[10px]">{s}</span>
-                        ))}
-                        {vol.skills.length > 3 && (
-                          <span className="badge bg-[#FAF9F6] text-[#6B7280] border-[#E5E2DC] text-[10px]">+{vol.skills.length - 3}</span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs text-[#6B7280]">
-                        <span className="flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" /> {vol.completedCamps} camps
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <MapPin className="w-3 h-3" /> {vol.travelRadiusKm}km
-                        </span>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            )}
-          </div>
-        </div>
-
-        {/* Volunteer Detail Panel */}
-        <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="card sticky top-20">
-          <h3 className="font-semibold text-[#1A1A1A] mb-4">Volunteer Profile</h3>
-          {selectedVol ? (
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#E5E2DC]">
+            <h2 className="text-lg font-bold text-[#1B2E25] mb-4 flex items-center gap-2">
+              <Target className="w-5 h-5 text-[#2D6A4F]" /> Match Constraints
+            </h2>
+            
             <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#2D6A4F] to-[#40916C] flex items-center justify-center text-white text-xl font-bold">
-                  {getInitials(selectedVol.displayName)}
-                </div>
-                <div>
-                  <p className="text-lg font-bold text-[#1A1A1A]">{selectedVol.displayName}</p>
-                  <p className="text-sm text-[#6B7280]">{roleLabel(selectedVol.role)}</p>
-                  <div className="flex items-center gap-1 mt-1">
-                    <Star className="w-4 h-4 text-[#F4A261]" />
-                    <span className="font-semibold text-[#1A1A1A]">{selectedVol.rating}/5</span>
-                  </div>
-                </div>
+              <div>
+                <label className="text-xs font-semibold text-[#1B2E25]/60 uppercase tracking-wider mb-2 block">Role Required</label>
+                <select value={roleConstraint} onChange={e => setRoleConstraint(e.target.value)} className="w-full p-2.5 rounded-xl border border-[#E5E2DC] bg-[#FAFAFA] text-sm">
+                  {roleFilters.map(r => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
               </div>
 
-              {/* AI Match Score Detail */}
-              {matchScores[selectedVol.userId] && (
-                <div className="p-3 rounded-xl bg-[#FEF3EC] border border-[#D4622B]/20">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Sparkles className="w-4 h-4 text-[#D4622B]" />
-                    <span className="text-xs font-bold text-[#D4622B]">AI MATCH SCORE</span>
-                  </div>
-                  <MatchScoreBar score={matchScores[selectedVol.userId].score} />
-                  <p className="text-xs text-[#6B7280] mt-2">{matchScores[selectedVol.userId].reasoning}</p>
+              <div>
+                <label className="text-xs font-semibold text-[#1B2E25]/60 uppercase tracking-wider mb-2 block">Required Language</label>
+                <input type="text" placeholder="e.g. Hindi" value={langConstraint} onChange={(e) => setLangConstraint(e.target.value)} className="w-full p-2.5 rounded-xl border border-[#E5E2DC] bg-[#FAFAFA] text-sm" />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-[#1B2E25]/60 uppercase tracking-wider mb-2 flex justify-between">
+                  <span>Max Travel Distance</span>
+                  <span>{maxDistance} km</span>
+                </label>
+                <input type="range" min="5" max="150" step="5" value={maxDistance} onChange={e => setMaxDistance(Number(e.target.value))} className="w-full accent-[#2D6A4F]" />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-[#1B2E25]/60 uppercase tracking-wider mb-2 flex justify-between">
+                  <span>Max Fatigue Score</span>
+                  <span>{maxFatigue}</span>
+                </label>
+                <input type="range" min="10" max="100" step="10" value={maxFatigue} onChange={e => setMaxFatigue(Number(e.target.value))} className="w-full accent-[#F4A261]" />
+              </div>
+
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-[#E5E2DC] bg-[#FAFAFA] cursor-pointer">
+                <input type="checkbox" checked={genderSensitive} onChange={e => setGenderSensitive(e.target.checked)} className="w-4 h-4 rounded text-[#2D6A4F] focus:ring-[#2D6A4F]" />
+                <span className="text-sm font-medium text-[#1B2E25]">Require Gender-Sensitive Care Cert</span>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-[#E5E2DC] bg-[#FAFAFA] cursor-pointer">
+                <input type="checkbox" checked={availableOnly} onChange={e => setAvailableOnly(e.target.checked)} className="w-4 h-4 rounded text-[#2D6A4F] focus:ring-[#2D6A4F]" />
+                <span className="text-sm font-medium text-[#1B2E25]">Strict Availability Window</span>
+              </label>
+
+              <button
+                onClick={generateMatches}
+                disabled={loadingAI || !currentCamp}
+                className="w-full py-3.5 bg-gradient-to-r from-[#2D6A4F] to-[#1B2E25] text-white font-bold rounded-xl shadow-lg shadow-[#2D6A4F]/20 hover:shadow-xl hover:shadow-[#2D6A4F]/30 hover:-translate-y-0.5 transition-all text-sm flex items-center justify-center gap-2"
+              >
+                {loadingAI ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                {loadingAI ? 'Calculating Matrix...' : 'Generate Matrix'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Recommendations Matrix */}
+        <div className="lg:col-span-2">
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#E5E2DC] h-full flex flex-col">
+            <h2 className="text-lg font-bold text-[#1B2E25] mb-1">Recommendation Matrix</h2>
+            <p className="text-sm text-[#1B2E25]/60 mb-6">Deterministic constraint solver output ranked by LLM</p>
+
+            <div className="flex-1 space-y-4 overflow-y-auto pr-2">
+              {candidates.length === 0 && !loadingAI && (
+                <div className="h-full flex flex-col items-center justify-center text-center p-8 bg-[#FAFAFA] rounded-xl border border-dashed border-[#E5E2DC]">
+                  <Users className="w-12 h-12 text-[#1B2E25]/20 mb-3" />
+                  <p className="text-[#1B2E25]/50 font-medium">No candidates generated</p>
+                  <p className="text-sm text-[#1B2E25]/40 mt-1">Adjust constraints and generate matrix to see recommended volunteers.</p>
                 </div>
               )}
 
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-[#6B7280] mb-2">Skills</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedVol.skills.map((s, i) => (
-                    <span key={i} className="badge bg-secondary-pale text-secondary border-secondary/20">{s}</span>
+              {loadingAI && (
+                <div className="space-y-4">
+                  {[1,2,3].map(i => (
+                    <div key={i} className="animate-pulse bg-[#FAFAFA] rounded-xl p-5 border border-[#E5E2DC]/50 h-32" />
                   ))}
                 </div>
-              </div>
-
-              {selectedVol.certifications.length > 0 && (
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-[#6B7280] mb-2">Certifications</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedVol.certifications.map((c, i) => (
-                      <span key={i} className="badge bg-primary-pale text-[#D4622B] border-[#D4622B]/20">{c}</span>
-                    ))}
-                  </div>
-                </div>
               )}
 
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-[#6B7280] mb-2">Languages</p>
-                <p className="text-sm text-[#1A1A1A]">{selectedVol.languages.join(', ')}</p>
-              </div>
+              <AnimatePresence mode="popLayout">
+                {candidates.map((c, i) => (
+                  <motion.div
+                    key={c.volunteerId}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="bg-white rounded-xl p-5 border border-[#E5E2DC] shadow-sm hover:shadow-md transition-all group"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-[#1B2E25] text-white flex items-center justify-center font-bold text-sm shadow-inner overflow-hidden shrink-0">
+                          {c.volunteer.photoURL ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={c.volunteer.photoURL} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            getInitials(c.volunteer.displayName)
+                          )}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-[#1B2E25]">{c.volunteer.displayName}</h3>
+                          <div className="flex items-center gap-2 text-xs font-medium text-[#1B2E25]/60">
+                            <span className="px-2 py-0.5 rounded-full bg-[#FAFAFA] border border-[#E5E2DC]">
+                              {roleLabel(c.volunteer.role)}
+                            </span>
+                            {c.volunteer.rating >= 4.5 && (
+                              <span className="flex items-center gap-0.5 text-amber-600">
+                                <Star className="w-3 h-3 fill-current" /> {c.volunteer.rating}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
 
-              <div className="text-xs text-[#6B7280] space-y-1 pt-2 border-t border-[#E5E2DC]">
-                <p>Preferred areas: <span className="text-[#1A1A1A]">{selectedVol.preferredAreas.join(', ')}</span></p>
-                <p>Travel radius: <span className="text-[#1A1A1A]">{selectedVol.travelRadiusKm} km</span></p>
-                <p>Completed camps: <span className="text-[#1A1A1A]">{selectedVol.completedCamps}</span></p>
-                <p>Status: <span className={`font-semibold ${selectedVol.availability === 'AVAILABLE' ? 'text-green-600' : selectedVol.availability === 'BUSY' ? 'text-amber-600' : 'text-gray-500'}`}>{selectedVol.availability}</span></p>
-              </div>
+                      <div className="flex flex-col items-end">
+                        <button
+                          onClick={() => handleAssign(c)}
+                          disabled={assigningId === c.volunteerId}
+                          className="px-4 py-2 bg-[#2D6A4F] text-white text-xs font-bold rounded-lg hover:bg-[#1B2E25] transition-colors flex items-center gap-2"
+                        >
+                          {assigningId === c.volunteerId ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                          Assign & Lock
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-lg bg-blue-50 border border-blue-100 text-sm text-blue-900 leading-snug">
+                      <span className="font-semibold">Match Reasoning:</span> {c.explanation}
+                    </div>
+
+                    {c.conflictAlert && (
+                      <div className="mt-3 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2 shadow-sm">
+                        <ShieldAlert className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                        <div>
+                          <span className="font-bold block">Constraint Alert</span>
+                          LLM reasoning deviated significantly from deterministic constraints. Override requires review.
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-4">
+                      <MatchScoreBar score={c.matchScore} />
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
-          ) : (
-            <div className="text-center py-12 text-[#6B7280]">
-              <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">Select a volunteer to view full profile</p>
-            </div>
-          )}
-        </motion.div>
+          </div>
+        </div>
+
       </div>
     </PageShell>
   );

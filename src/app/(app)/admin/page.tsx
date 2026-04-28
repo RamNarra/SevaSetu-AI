@@ -13,6 +13,7 @@ import {
   seedCampPlans,
   seedPatientVisits,
   seedMedicineStock,
+  seedVolunteerPresence,
 } from '@/data/seed';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -64,7 +65,7 @@ export default function AdminPage() {
       setSeedResults([...results]);
 
       // Seed Localities
-      const locOps = seedLocalities.map((loc, i) => ({
+      const locOps = seedLocalities.map((loc) => ({
         collection: 'localities',
         docId: `loc_${loc.name.toLowerCase().replace(/\s+/g, '_')}`,
         data: loc,
@@ -81,6 +82,15 @@ export default function AdminPage() {
       }));
       await batchWrite(volOps);
       results.push(`✅ ${volOps.length} volunteers seeded`);
+      setSeedResults([...results]);
+
+      const presenceOps = seedVolunteerPresence.map((presence) => ({
+        collection: 'volunteer_presence',
+        docId: presence.uid,
+        data: presence,
+      }));
+      await batchWrite(presenceOps);
+      results.push(`✅ ${presenceOps.length} live presence markers seeded`);
       setSeedResults([...results]);
 
       // Seed Raw Reports
@@ -161,7 +171,7 @@ export default function AdminPage() {
   async function handleClearData() {
     if (!confirm('Are you sure you want to clear ALL seeded data? This cannot be undone.')) return;
     setIsClearing(true);
-    const collections = ['localities', 'volunteer_profiles', 'raw_reports', 'extracted_reports', 'outbox_events', 'camp_plans', 'patient_visits', 'medicine_stock', 'dispense_logs', 'followups'];
+    const collections = ['localities', 'volunteer_profiles', 'volunteer_presence', 'raw_reports', 'extracted_reports', 'outbox_events', 'camp_plans', 'patient_visits', 'medicine_stock', 'dispense_logs', 'followups'];
 
     try {
       for (const col of collections) {

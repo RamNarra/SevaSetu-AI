@@ -6,6 +6,7 @@ import {
   CampStatus,
   ReportStatus,
   type ExtractedSignal,
+  type VolunteerPresence,
 } from '@/types';
 
 // ---- Localities ----
@@ -139,6 +140,10 @@ const demoLocalityIndex: Record<string, (typeof seedLocalities)[number]> = Objec
 
 function toLocalityId(name: string): string {
   return `loc_${name.toLowerCase().replace(/\s+/g, '_')}`;
+}
+
+function toPseudoGeohash(lat: number, lng: number) {
+  return `${lat.toFixed(3)}:${lng.toFixed(3)}`;
 }
 
 function inferAffectedEstimate(rawText: string): number {
@@ -299,6 +304,59 @@ export const seedCampPlans = [
     createdAt: Timestamp.fromDate(new Date('2026-03-01')),
     summary: 'Served 98 patients. 15 diabetes follow-ups completed. 12 prescription refills. 3 new referrals to district hospital.',
   }
+];
+
+export const seedVolunteerPresence: VolunteerPresence[] = [
+  {
+    uid: 'vol_001',
+    geohash: toPseudoGeohash(26.805, 81.028),
+    lat: 26.805,
+    lng: 81.028,
+    lastSeenAt: Timestamp.fromDate(new Date('2026-04-28T09:10:00+05:30')),
+    batteryLevel: 76,
+    networkClass: '4g',
+    activeCampId: 'camp_planned',
+  },
+  {
+    uid: 'vol_006',
+    geohash: toPseudoGeohash(26.792, 81.041),
+    lat: 26.792,
+    lng: 81.041,
+    lastSeenAt: Timestamp.fromDate(new Date('2026-04-28T09:08:00+05:30')),
+    batteryLevel: 18,
+    networkClass: '3g',
+    activeCampId: 'camp_planned',
+  },
+  {
+    uid: 'vol_008',
+    geohash: toPseudoGeohash(18.817, 82.703),
+    lat: 18.817,
+    lng: 82.703,
+    lastSeenAt: Timestamp.fromDate(new Date('2026-04-28T08:56:00+05:30')),
+    batteryLevel: 62,
+    networkClass: 'offline',
+    activeCampId: null,
+  },
+  {
+    uid: 'vol_004',
+    geohash: toPseudoGeohash(19.046, 72.861),
+    lat: 19.046,
+    lng: 72.861,
+    lastSeenAt: Timestamp.fromDate(new Date('2026-04-28T09:03:00+05:30')),
+    batteryLevel: 58,
+    networkClass: '4g',
+    activeCampId: null,
+  },
+  {
+    uid: 'vol_015',
+    geohash: toPseudoGeohash(14.691, 77.608),
+    lat: 14.691,
+    lng: 77.608,
+    lastSeenAt: Timestamp.fromDate(new Date('2026-04-28T08:49:00+05:30')),
+    batteryLevel: 84,
+    networkClass: '2g',
+    activeCampId: null,
+  },
 ];
 
 // ---- Patient Visits ----

@@ -21,6 +21,14 @@ export interface MatchedCandidate {
   explanation: string;
 }
 
+function getLastAssignedMillis(lastAssigned?: VolunteerProfile['lastAssigned']): number | null {
+  if (!lastAssigned || typeof lastAssigned.toMillis !== 'function') {
+    return null;
+  }
+
+  return lastAssigned.toMillis();
+}
+
 export function rankVolunteers(
   signal: ExtractedSignal,
   volunteers: VolunteerProfile[]
@@ -118,11 +126,14 @@ export function rankVolunteers(
     // 4. Fairness / Load Balance (10%)
     let loadScore = 10;
     if (vol.lastAssigned) {
-      const lastAssignedMs = typeof vol.lastAssigned.toMillis === 'function' ? vol.lastAssigned.toMillis() : new Date(vol.lastAssigned as any).getTime();
-      const daysSince = (now - lastAssignedMs) / (1000 * 60 * 60 * 24);
-      
-      // If assigned within the last 2 days, score 0. If 14 days, score 10.
-      loadScore = 10 * Math.max(0, Math.min(1, daysSince / 14));
+      const lastAssignedMs = getLastAssignedMillis(vol.lastAssigned);
+
+      if (lastAssignedMs !== null) {
+        const daysSince = (now - lastAssignedMs) / (1000 * 60 * 60 * 24);
+
+        // If assigned within the last 2 days, score 0. If 14 days, score 10.
+        loadScore = 10 * Math.max(0, Math.min(1, daysSince / 14));
+      }
     }
     if (loadScore === 10) {
       reasons.push('Prioritized for load balancing.');

@@ -1,10 +1,12 @@
 'use client';
 
-import { Bell, Search, Menu } from 'lucide-react';
+import Image from 'next/image';
+import { AlertTriangle, Bell, Loader2, MapPinned, Menu, Search } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useVolunteerPresence } from '@/hooks/useVolunteerPresence';
 
 const searchRoutes = [
   { label: 'Dashboard', path: '/dashboard', keywords: ['home', 'overview', 'stats'] },
@@ -24,6 +26,41 @@ export default function Navbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
   const [query, setQuery] = useState('');
   const [showResults, setShowResults] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const presenceEligible = Boolean(user && userDoc && userDoc.role !== 'COORDINATOR');
+  const {
+    trackingEnabled,
+    setTrackingEnabled,
+    snapshot,
+    status,
+    error,
+  } = useVolunteerPresence({
+    uid: user?.uid,
+    eligible: presenceEligible,
+  });
+
+  const presenceAtRisk = Boolean(
+    snapshot &&
+    (snapshot.batteryLevel < 20 ||
+      snapshot.networkClass === '2g' ||
+      snapshot.networkClass === 'slow-2g' ||
+      snapshot.networkClass === 'offline')
+  );
+
+  const presenceTone = error
+    ? 'border-red-300/30 bg-red-500/10 text-red-700'
+    : trackingEnabled
+      ? presenceAtRisk
+        ? 'border-amber-300/40 bg-amber-400/10 text-amber-700'
+        : 'border-emerald-300/40 bg-emerald-400/10 text-emerald-700'
+      : 'border-[#E5E2DC] bg-white text-[#6B7280]';
+
+  const presenceLabel = !trackingEnabled
+    ? 'Enable Presence'
+    : status === 'locating'
+      ? 'Locating...'
+      : status === 'syncing'
+        ? 'Syncing...'
+        : 'Presence On';
 
   const results = query.trim().length > 0
     ? searchRoutes.filter((r) =>
@@ -83,6 +120,33 @@ export default function Navbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
 
       {/* Right side */}
       <div className="flex items-center gap-4">
+        {presenceEligible && (
+          <button
+            type="button"
+            onClick={() => setTrackingEnabled(!trackingEnabled)}
+            aria-pressed={trackingEnabled}
+            title={error || 'Opt in to periodically share GPS, battery, and network telemetry for dispatch.'}
+            className={`rounded-2xl border px-3 py-2 text-left transition-all flex items-center gap-2 ${presenceTone}`}
+          >
+            {status === 'locating' || status === 'syncing' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : presenceAtRisk ? (
+              <AlertTriangle className="h-4 w-4" />
+            ) : (
+              <MapPinned className="h-4 w-4" />
+            )}
+
+            <div className="hidden leading-tight sm:block">
+              <p className="text-xs font-semibold">{presenceLabel}</p>
+              <p className="text-[11px] opacity-80">
+                {trackingEnabled && snapshot
+                  ? `${snapshot.batteryLevel}% • ${snapshot.networkClass}`
+                  : 'GPS / battery / network opt-in'}
+              </p>
+            </div>
+          </button>
+        )}
+
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
@@ -103,9 +167,12 @@ export default function Navbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
               </p>
             </div>
             {user.photoURL ? (
-              <img
+              <Image
                 src={user.photoURL}
-                alt=""
+                alt={`${user.displayName || 'User'} profile photo`}
+                width={36}
+                height={36}
+                unoptimized
                 className="w-9 h-9 rounded-xl ring-2 ring-[#E5E2DC] hover:ring-[#D4622B] transition-all cursor-pointer"
               />
             ) : (

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import PageShell from '@/components/layout/PageShell';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CalendarRange, MapPin, Users, Sparkles, Loader2, Check, Plus, ChevronDown, Star } from 'lucide-react';
+import { CalendarRange, MapPin, Users, Sparkles, Loader2, Check, Plus, Star } from 'lucide-react';
 import { getCollection, addDocument, Timestamp } from '@/lib/firebase/firestore';
 import { Locality, VolunteerProfile, CampStatus, StaffRecommendation } from '@/types';
 import { urgencyBgColor, urgencyColor, roleLabel, getInitials } from '@/lib/utils';
@@ -288,7 +288,6 @@ export default function PlannerPage() {
               <div className="space-y-2">
                 <AnimatePresence>
                   {recommendations.map((rec, i) => {
-                    const vol = volunteers.find((v) => v.userId === rec.volunteerId);
                     const isSelected = selectedStaff.includes(rec.volunteerId);
                     return (
                       <motion.div
