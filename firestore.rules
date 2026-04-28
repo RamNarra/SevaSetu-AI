@@ -2,11 +2,23 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function isAuthenticated() { return request.auth != null; }
-    function isCoordinator() {
+
+    function hasRole(role) {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
       return isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'COORDINATOR';
+        exists(userPath) &&
+        get(userPath).data.role == role;
     }
+    
+    function isCoordinator() {
+      return hasRole('COORDINATOR');
+    }
+
     function isOwner(userId) { return request.auth.uid == userId; }
+
+    function canDispenseMeds() {
+      return hasRole('COORDINATOR') || hasRole('PHARMACIST') || hasRole('DOCTOR');
+    }
 
     match /users/{userId} {
       allow read: if isAuthenticated();
@@ -21,14 +33,51 @@ service cloud.firestore {
         (resource.data.userId == request.auth.uid || isCoordinator());
     }
 
-    match /community_reports/{docId} {
+    match /raw_reports/{docId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        request.resource.data.submittedBy == request.auth.uid &&
+        request.resource.data.clientEventId == docId;
+      allow update: if isCoordinator() || (
+        isAuthenticated() &&
+        resource.data.submittedBy == request.auth.uid &&
+        request.resource.data.submittedBy == resource.data.submittedBy &&
+        request.resource.data.clientEventId == resource.data.clientEventId
+      );
+    }
+
+    match /extracted_reports/{docId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isCoordinator();
+    }
+
+    match /outbox_events/{docId} {
+      allow read: if isCoordinator() || (
+        isAuthenticated() &&
+        resource.data.submittedBy == request.auth.uid
+      );
+      allow create: if isAuthenticated() &&
+        request.resource.data.submittedBy == request.auth.uid &&
+        request.resource.data.clientEventId == docId &&
+        request.resource.data.reportId == docId;
+      allow update: if isCoordinator() || (
+        isAuthenticated() &&
+        resource.data.submittedBy == request.auth.uid &&
+        request.resource.data.submittedBy == resource.data.submittedBy &&
+        request.resource.data.clientEventId == resource.data.clientEventId &&
+        request.resource.data.reportId == resource.data.reportId
+      );
+    }
+
+    match /dispense_logs/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        canDispenseMeds() &&
+        request.resource.data.dispensedBy == request.auth.uid;
       allow update, delete: if isCoordinator();
     }
 
-    // All other collections: read for authenticated, write for coordinators
-    match /{path=**} {
+    match /{allPaths=**} {
       allow read: if isAuthenticated();
       allow write: if isCoordinator();
     }

@@ -1,0 +1,26 @@
+{
+  "name": "SevaSetu AI",
+  "short_name": "SevaSetu",
+  "description": "Offline-first NGO coordination for disaster response, field reporting, and camp operations.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FAF9F6",
+  "theme_color": "#D4622B",
+  "lang": "en-IN",
+  "categories": ["health", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

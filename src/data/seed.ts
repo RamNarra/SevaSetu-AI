@@ -5,6 +5,7 @@ import {
   VisitStage,
   CampStatus,
   ReportStatus,
+  type ExtractedSignal,
 } from '@/types';
 
 // ---- Localities ----
@@ -132,7 +133,103 @@ export const seedVolunteers = [
   { displayName: 'Kavitha R.', role: UserRole.SUPPORT, skills: ['Nursing Assist', 'Triage Support', 'Vital Signs'], certifications: ['ANM'], languages: ['Tamil', 'Hindi', 'English'], availability: 'AVAILABLE' as const, preferredAreas: ['Maharashtra', 'Andhra Pradesh'], travelRadiusKm: 100, completedCamps: 16, rating: 4.7, userId: 'vol_015' },
 ];
 
-// ---- Community Reports ----
+const demoLocalityIndex: Record<string, (typeof seedLocalities)[number]> = Object.fromEntries(
+  seedLocalities.map((locality) => [locality.name, locality])
+) as Record<string, (typeof seedLocalities)[number]>;
+
+function toLocalityId(name: string): string {
+  return `loc_${name.toLowerCase().replace(/\s+/g, '_')}`;
+}
+
+function inferAffectedEstimate(rawText: string): number {
+  const match = rawText.match(/(\d+)\+?/);
+  return match ? Number(match[1]) : 25;
+}
+
+function inferSeverity(rawText: string): 1 | 2 | 3 | 4 | 5 {
+  const normalized = rawText.toLowerCase();
+
+  if (
+    normalized.includes('died') ||
+    normalized.includes('death') ||
+    normalized.includes('hospitalized') ||
+    normalized.includes('extremely high')
+  ) {
+    return 5;
+  }
+
+  if (
+    normalized.includes('urgent') ||
+    normalized.includes('severe') ||
+    normalized.includes('spiked') ||
+    normalized.includes('completely out of stock')
+  ) {
+    return 4;
+  }
+
+  if (normalized.includes('worried') || normalized.includes('follow-up')) {
+    return 3;
+  }
+
+  if (normalized.includes('routine')) {
+    return 2;
+  }
+
+  return 3;
+}
+
+function buildUrgencySignals(rawText: string): ExtractedSignal['urgencySignals'] {
+  const normalized = rawText.toLowerCase();
+  const signals: ExtractedSignal['urgencySignals'] = [];
+
+  if (normalized.includes('died') || normalized.includes('death')) {
+    signals.push({ type: 'death', evidenceSpan: rawText.slice(0, 160), confidence: 0.96 });
+  }
+  if (normalized.includes('hospitalized')) {
+    signals.push({ type: 'hospitalization', evidenceSpan: rawText.slice(0, 160), confidence: 0.92 });
+  }
+  if (
+    normalized.includes('tb') ||
+    normalized.includes('malaria') ||
+    normalized.includes('waterborne') ||
+    normalized.includes('diarrhea')
+  ) {
+    signals.push({ type: 'outbreak', evidenceSpan: rawText.slice(0, 160), confidence: 0.88 });
+  }
+  if (normalized.includes('out of stock') || normalized.includes('supplements completely out of stock')) {
+    signals.push({ type: 'supply_stockout', evidenceSpan: rawText.slice(0, 160), confidence: 0.9 });
+  }
+  if (normalized.includes('boat-only') || normalized.includes('traveling 25km') || normalized.includes('access')) {
+    signals.push({ type: 'access_blocked', evidenceSpan: rawText.slice(0, 160), confidence: 0.82 });
+  }
+  if (
+    normalized.includes('pregnant women') ||
+    normalized.includes('children') ||
+    normalized.includes('elderly')
+  ) {
+    signals.push({ type: 'vulnerable_group', evidenceSpan: rawText.slice(0, 160), confidence: 0.86 });
+  }
+
+  return signals;
+}
+
+function buildNeeds(localityName: string, rawText: string): ExtractedSignal['needs'] {
+  const locality = demoLocalityIndex[localityName];
+  const issues = locality?.issues?.slice(0, 3) ?? ['general medical need'];
+  const severity = inferSeverity(rawText);
+  const affectedEstimate = inferAffectedEstimate(rawText);
+
+  return issues.map((issue, index) => ({
+    taxonomyCode: issue.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''),
+    label: issue,
+    severity,
+    affectedEstimate: Math.max(affectedEstimate - index * 5, 5),
+    evidenceSpan: rawText.slice(0, 180),
+    confidence: Math.max(0.65, 0.92 - index * 0.08),
+  }));
+}
+
+// ---- Raw Reports ----
 export const seedReports = [
   { rawText: "Visited Rampur village on 3rd April. Saw many children with skin rashes and diarrhea. Clean water not available. At least 50 families affected. Need dermatologist and pediatrician urgently. Last camp was over 8 months ago and nothing was done about the water problem.", source: 'field_note' as const, locality: 'Rampur Village', status: ReportStatus.EXTRACTED },
   { rawText: "Anganwadi worker from Koraput block reports severe anemia in pregnant women. About 30 cases identified in last 2 months. Iron and folic acid supplements completely out of stock at local PHC. Women are traveling 25km to get basic supplements. Community very worried about upcoming deliveries.", source: 'survey' as const, locality: 'Koraput Block', status: ReportStatus.EXTRACTED },
@@ -145,6 +242,33 @@ export const seedReports = [
   { rawText: "Dharavi update from community volunteer: One of the TB suspects died last week, family says he never got tested. Community is panicking. Local MLA office requesting NGO intervention. Media might cover this — we need to act fast.", source: 'field_note' as const, locality: 'Dharavi Health Post', status: ReportStatus.EXTRACTED },
   { rawText: "Monthly report from Sundarbans CHW: Snake bite cases increasing as water recedes. Two serious cases evacuated by boat. Also seeing skin fungal infections spreading. Monsoon-related issues likely to continue for 2 more months.", source: 'paste' as const, locality: 'Sundarbans Island', status: ReportStatus.EXTRACTED },
 ];
+
+export const seedExtractedSignals: ExtractedSignal[] = seedReports.map((report, index) => {
+  const locality = report.locality ? demoLocalityIndex[report.locality] : undefined;
+
+  return {
+    reportId: `report_${String(index + 1).padStart(3, '0')}`,
+    locality: {
+      canonicalId: report.locality ? toLocalityId(report.locality) : null,
+      rawName: report.locality ?? 'Unknown locality',
+      confidence: locality ? 0.96 : 0.5,
+    },
+    needs: buildNeeds(report.locality ?? '', report.rawText),
+    urgencySignals: buildUrgencySignals(report.rawText),
+    geo: {
+      lat: locality?.coordinates.lat ?? null,
+      lng: locality?.coordinates.lng ?? null,
+      geohash: null,
+      source: 'report_text',
+    },
+    model: {
+      provider: 'vertex-ai',
+      name: 'seeded-demo',
+      version: 'seed-v1',
+      promptVersion: 'seed-v1',
+    },
+  };
+});
 
 // ---- Camp Plans ----
 export const seedCampPlans = [

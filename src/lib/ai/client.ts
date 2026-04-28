@@ -1,11 +1,13 @@
 import { GoogleGenAI } from '@google/genai';
 
-// Gemini Developer API with gemini-3-flash-preview (Gemini 3 Flash)
+// Initialize with Vertex AI
 export const genai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY!,
+  vertexai: true,
+  project: process.env.GOOGLE_CLOUD_PROJECT,
+  location: process.env.GOOGLE_CLOUD_LOCATION || 'us-central1',
 });
 
-export const MODEL = 'gemini-3-flash-preview';
+export const MODEL = 'gemini-1.5-flash';
 
 /**
  * Extract and parse JSON from Gemini response text.

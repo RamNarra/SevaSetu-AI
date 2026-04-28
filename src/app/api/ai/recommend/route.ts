@@ -13,33 +13,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'volunteers array is required' }, { status: 400 });
     }
 
-    const prompt = `You are a resource matching AI for SevaSetu AI, an NGO health camp platform.
-
-Camp: "${campTitle}" at ${localityName}
-Required roles: ${JSON.stringify(requiredRoles)}
-
-Available volunteers:
-${JSON.stringify(volunteers, null, 2)}
-
-For each required role, recommend the best-matching volunteers from the list. Consider: skills, certifications, language match, availability, travel distance to the locality, and experience.
-
-Return ONLY valid JSON array:
-[
-  {
-    "volunteerId": "string",
-    "volunteerName": "string",
-    "role": "string (DOCTOR/PHARMACIST/FIELD_VOLUNTEER/SUPPORT)",
-    "matchScore": number (0-100),
-    "reasoning": "string - 1 sentence why this person is a good match"
-  }
-]
-
-Rank by match score descending. Include ALL available volunteers with scores.`;
+    const prompt = `You are a resource matching AI for SevaSetu AI.
+    
+    Camp: "${campTitle}" at ${localityName}
+    Requirements: ${JSON.stringify(requiredRoles)}
+    
+    Volunteer Pool: ${JSON.stringify(volunteers)}
+    
+    Match volunteers to roles. Priority criteria:
+    1. ROLE MATCH (Doctor must be DOCTOR)
+    2. LANGUAGE MATCH (Crucial for communication in local area)
+    3. EXPERIENCE (Previous camps completed)
+    4. DISTANCE (Lower radius is better)
+    
+    Return a JSON array of objects:
+    {
+      "volunteerId": "string",
+      "volunteerName": "string",
+      "role": "string",
+      "matchScore": number (0-100),
+      "reasoning": "string (mention language/experience match)"
+    }`;
 
     const response = await genai.models.generateContent({
       model: MODEL,
       contents: prompt,
-      config: { temperature: 0.3, maxOutputTokens: 8192 },
+      config: { 
+        temperature: 0.3, 
+        maxOutputTokens: 8192,
+        responseMimeType: 'application/json',
+      },
     });
 
     const text = response.text || '';

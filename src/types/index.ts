@@ -43,8 +43,13 @@ export enum ReportStatus {
   RAW = 'RAW',
   PROCESSING = 'PROCESSING',
   EXTRACTED = 'EXTRACTED',
+  HUMAN_APPROVED = 'HUMAN_APPROVED',
+  HUMAN_REJECTED = 'HUMAN_REJECTED',
   FAILED = 'FAILED',
 }
+
+export type ReportSource = 'paste' | 'upload' | 'survey' | 'field_note';
+export type OutboxEventStatus = 'QUEUED' | 'SYNCING' | 'SYNCED' | 'FAILED';
 
 // ---- Firestore Document Interfaces ----
 
@@ -74,31 +79,61 @@ export interface VolunteerProfile {
   role: UserRole;
   phone?: string;
   email?: string;
+  fatigueScore?: number; // 0-100
+  lastAssigned?: Timestamp;
+  coordinates?: { lat: number; lng: number };
 }
 
-export interface CommunityReport {
+export interface RawReport {
   id?: string;
+  clientEventId: string;
   submittedBy: string;
   submitterName?: string;
   rawText: string;
   fileUrls: string[];
-  source: 'paste' | 'upload' | 'survey' | 'field_note';
-  locality?: string;
+  storageUri?: string | null;
+  source: ReportSource;
   status: ReportStatus;
   createdAt: Timestamp;
+  updatedAt?: Timestamp;
+  lastSyncedAt?: Timestamp;
 }
 
-export interface ExtractedReport {
+export interface ExtractedSignal {
   id?: string;
   reportId: string;
-  locality: string;
-  issueTypes: string[];
-  urgencySignals: string[];
-  estimatedAffected: number;
-  supportNeeded: string[];
-  confidence: number; // 0-1
-  entities: Record<string, string[]>;
-  processedAt: Timestamp;
+  locality: {
+    canonicalId: string | null;
+    rawName: string;
+    confidence: number;
+  };
+  needs: Array<{
+    taxonomyCode: string;
+    label: string;
+    severity: 1 | 2 | 3 | 4 | 5;
+    affectedEstimate: number;
+    evidenceSpan: string;
+    confidence: number;
+  }>;
+  urgencySignals: Array<{
+    type: 'death' | 'hospitalization' | 'outbreak' | 'supply_stockout' | 'access_blocked' | 'vulnerable_group';
+    evidenceSpan: string;
+    confidence: number;
+  }>;
+  geo: {
+    lat: number | null;
+    lng: number | null;
+    geohash: string | null;
+    source: 'map_geocode' | 'report_text' | 'user_pin' | 'unknown';
+  };
+  model: {
+    provider: 'vertex-ai';
+    name: string;
+    version: string;
+    promptVersion: string;
+  };
+  processedAt?: Timestamp;
+  createdAt?: Timestamp;
 }
 
 export interface UrgencyBreakdown {
@@ -231,17 +266,21 @@ export interface AuditLog {
   details: string;
 }
 
-// ---- AI Response Types ----
-
-export interface ExtractionResult {
-  locality: string;
-  issueTypes: string[];
-  urgencySignals: string[];
-  estimatedAffected: number;
-  supportNeeded: string[];
-  confidence: number;
-  entities: Record<string, string[]>;
+export interface OutboxEventDoc {
+  id?: string;
+  clientEventId: string;
+  reportId: string;
+  submittedBy: string;
+  submitterName?: string;
+  source: ReportSource;
+  status: OutboxEventStatus;
+  attempts: number;
+  createdAt: Timestamp;
+  lastAttemptAt?: Timestamp;
+  lastSyncedAt?: Timestamp;
+  errorMessage?: string;
 }
+
 
 export interface UrgencyScoreResult {
   score: number;

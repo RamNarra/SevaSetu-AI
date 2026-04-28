@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Heart,
+  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { signOut } from '@/lib/firebase/auth';
@@ -24,6 +25,7 @@ import { useState, useEffect } from 'react';
 
 const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'Command Center', href: '/command-center', icon: Sparkles },
   { label: 'Reports', href: '/reports', icon: FileText },
   { label: 'Localities', href: '/localities', icon: MapPin },
   { label: 'Camp Planner', href: '/planner', icon: CalendarRange },
@@ -40,11 +42,16 @@ export default function Sidebar({ mobileOpen, onClose }: { mobileOpen?: boolean;
   const pathname = usePathname();
   const { userDoc, user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      ? window.matchMedia('(max-width: 767px)').matches
+      : false
+  );
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     const mq = window.matchMedia('(max-width: 767px)');
-    setIsMobile(mq.matches);
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);

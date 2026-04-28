@@ -4,18 +4,12 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, ArrowRight, Check } from 'lucide-react';
-import { signInWithGoogle, createUserDoc, getUserDoc, updateUserRole, checkRedirectResult } from '@/lib/firebase/auth';
+import { signInWithGoogle, createUserDoc, getUserDoc, checkRedirectResult } from '@/lib/firebase/auth';
 import { useAuth } from '@/contexts/AuthContext';
 import { UserRole } from '@/types';
 import toast from 'react-hot-toast';
 
 const roles = [
-  {
-    value: UserRole.COORDINATOR,
-    label: 'Coordinator / Admin',
-    description: 'Full access to dashboard, planning, allocation, and admin tools',
-    emoji: '🎯',
-  },
   {
     value: UserRole.DOCTOR,
     label: 'Doctor / Consultant',

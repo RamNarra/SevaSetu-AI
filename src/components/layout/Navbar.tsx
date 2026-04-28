@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 
 const searchRoutes = [
   { label: 'Dashboard', path: '/dashboard', keywords: ['home', 'overview', 'stats'] },
+  { label: 'Command Center', path: '/command-center', keywords: ['command', 'center', 'operations center', 'urgency', 'fatigue', 'staffing'] },
   { label: 'Localities', path: '/localities', keywords: ['locality', 'map', 'urgency', 'heatmap', 'priority'] },
   { label: 'Field Reports', path: '/reports', keywords: ['report', 'field', 'submit', 'extract'] },
   { label: 'Camp Planner', path: '/planner', keywords: ['camp', 'plan', 'schedule', 'create'] },

@@ -41,7 +41,11 @@ Return ONLY valid JSON:
     const response = await genai.models.generateContent({
       model: MODEL,
       contents: prompt,
-      config: { temperature: 0.3, maxOutputTokens: 1024 },
+      config: { 
+        temperature: 0.3, 
+        maxOutputTokens: 1024,
+        responseMimeType: 'application/json',
+      },
     });
 
     const text = response.text || '';

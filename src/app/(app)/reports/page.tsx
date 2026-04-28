@@ -3,98 +3,135 @@
 import PageShell from '@/components/layout/PageShell';
 import { FileText, Upload, Clipboard, Sparkles, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { addDocument, Timestamp } from '@/lib/firebase/firestore';
-import { uploadReportFile } from '@/lib/firebase/storage';
 import { useAuth } from '@/contexts/AuthContext';
-import { ReportStatus } from '@/types';
+import { type ReportSource } from '@/types';
+import {
+  createClientEventId,
+  queueReportForOffline,
+} from '@/lib/offline/outbox';
+import { submitRawReportToPipeline } from '@/lib/reports/pipeline';
 
 const sampleReports = [
-  "Visited Rampur village on 3rd April. Saw many children with skin rashes and diarrhea. Clean water not available. At least 50 families affected. Need dermatologist and pediatrician. Very urgent — last camp was 8 months ago.",
-  "Anganwadi worker from Koraput block reports severe anemia in pregnant women. 30+ cases in last 2 months. No iron supplements available at local PHC. Need blood tests and supplements. Community very worried.",
-  "Follow up note from Dharavi health post: TB screening camp needed urgently. 12 suspected cases reported by local clinic. Previous camp screened 200 people, found 8 positive. Area has high population density.",
-];
+            "Visited Rampur village on 3rd April. Saw many children with skin rashes and diarrhea. Clean water not available. At least 50 families affected. Need dermatologist and pediatrician. Very urgent \u2014 last camp was 8 months ago.",
+            "Anganwadi worker from Koraput block reports severe anemia in pregnant women. 30+ cases in last 2 months. No iron supplements available at local PHC. Need blood tests and supplements. Community very worried.",
+            "Follow up note from Dharavi health post: TB screening camp needed urgently. 12 suspected cases reported by local clinic. Previous camp screened 200 people, found 8 positive. Area has high population density.",
+        ];
 
 export default function ReportsPage() {
-  const { user, userDoc } = useAuth();
-  const [rawText, setRawText] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [extractionResult, setExtractionResult] = useState<Record<string, unknown> | null>(null);
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+    const { user } = useAuth();
+    const [rawText, setRawText] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [extractionResult, setExtractionResult] = useState<Record<string, unknown> | null>(null);
+    const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+    const [isOnline, setIsOnline] = useState(true);
 
-  async function handleSubmit() {
-    if (!rawText.trim() && !uploadedFile) {
-      toast.error('Please paste text or upload a file');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      // Read text content from uploaded file if no pasted text
-      let textForExtraction = rawText.trim();
-      if (!textForExtraction && uploadedFile) {
-        try {
-          textForExtraction = await uploadedFile.text();
-        } catch {
-          toast.error('Could not read file content');
+    useEffect(() => {
+        if (typeof navigator === 'undefined') {
+            return;
         }
-      }
 
-      let fileUrls: string[] = [];
-      if (uploadedFile) {
-        try {
-          const url = await uploadReportFile(uploadedFile);
-          fileUrls = [url];
-        } catch (uploadErr) {
-          console.warn('File upload failed (storage rules may not be deployed):', uploadErr);
-          // Continue — we still have the text content for extraction
-        }
-      }
+        setIsOnline(navigator.onLine);
 
-      const reportId = await addDocument('community_reports', {
-        submittedBy: user?.uid || '',
-        submitterName: user?.displayName || '',
-        rawText: textForExtraction,
-        fileUrls,
-        source: uploadedFile ? 'upload' : 'paste',
-        status: ReportStatus.RAW,
-        createdAt: Timestamp.now(),
-      });
+        const handleOnline = () => setIsOnline(true);
+        const handleOffline = () => setIsOnline(false);
 
-      toast.success('Report submitted! Starting AI extraction...');
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
 
-      // Trigger AI extraction
-      setIsExtracting(true);
-      try {
-        const response = await fetch('/api/ai/extract', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reportId, text: textForExtraction }),
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, []);
+
+    async function queueCurrentReport(clientEventId: string, source: ReportSource) {
+        await queueReportForOffline({
+            clientEventId,
+            rawText: rawText.trim() || (uploadedFile ? '[Attachment queued for upload]' : ''),
+            submittedBy: user?.uid || '',
+            submitterName: user?.displayName || 'Anonymous Volunteer',
+            source,
+            files: uploadedFile ? [uploadedFile] : [],
         });
-        const data = await response.json();
-        if (data.success) {
-          setExtractionResult(data.result);
-          toast.success('AI extraction complete!');
-        } else {
-          toast.error('Extraction failed: ' + (data.error || 'Unknown error'));
-        }
-      } catch {
-        toast.error('AI extraction service unavailable');
-      } finally {
-        setIsExtracting(false);
-      }
 
-      setRawText('');
-      setUploadedFile(null);
-    } catch (error) {
-      console.error(error);
-      toast.error('Failed to submit report');
-    } finally {
-      setIsSubmitting(false);
+        toast.success('Offline: report saved to the outbox. It will sync automatically when the network returns.');
+        setRawText('');
+        setUploadedFile(null);
+        setExtractionResult(null);
     }
-  }
+
+    async function handleSubmit() {
+        if (!rawText.trim() && !uploadedFile) {
+            toast.error('Please paste text or upload a file');
+            return;
+        }
+
+        if (!user?.uid) {
+            toast.error('Please wait for sign-in to finish before submitting a report');
+            return;
+        }
+
+        const clientEventId = createClientEventId();
+        const source: ReportSource = uploadedFile ? 'upload' : 'paste';
+
+        setIsSubmitting(true);
+        try {
+            if (!isOnline) {
+                await queueCurrentReport(clientEventId, source);
+                return;
+            }
+
+            // The client only writes `raw_reports` and uploads files. GCP Eventarc
+            // (or a backend onDocumentCreated trigger in local emulation) is
+            // responsible for pinging the extraction webhook afterward.
+            const result = await submitRawReportToPipeline({
+                clientEventId,
+                rawText: rawText.trim(),
+                submittedBy: user.uid,
+                submitterName: user?.displayName || '',
+                source,
+                createdAt: Date.now(),
+                files: uploadedFile
+                    ? [
+                        {
+                            name: uploadedFile.name,
+                            type: uploadedFile.type,
+                            size: uploadedFile.size,
+                            lastModified: uploadedFile.lastModified,
+                            blob: uploadedFile,
+                        },
+                    ]
+                    : [],
+            });
+
+            setExtractionResult(null);
+
+            toast.success(
+                result.alreadyProcessed
+                    ? 'Report already existed. Backend extraction will continue idempotently.'
+                    : 'Report stored. Backend extraction has been queued by the server-side event trigger.'
+            );
+
+            setRawText('');
+            setUploadedFile(null);
+        } catch (error) {
+            console.error(error);
+            const msg = String(error).toLowerCase();
+            if (
+                msg.includes('network') ||
+                msg.includes('offline') ||
+                msg.includes('failed to fetch')
+            ) {
+                await queueCurrentReport(clientEventId, source);
+            } else {
+                toast.error('Failed to submit report');
+            }
+        } finally {
+            setIsSubmitting(false);
+        }
+    }
 
   function loadSample(index: number) {
     setRawText(sampleReports[index]);
@@ -107,6 +144,12 @@ export default function ReportsPage() {
       title="Field Reports"
       subtitle="Submit community reports and survey data for AI extraction"
     >
+      <div className="flex items-center gap-2 mb-6 px-4 py-2 bg-blue-50 border border-blue-100 rounded-xl w-fit">
+        <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`} />
+        <span className="text-xs font-medium text-blue-700">
+          {isOnline ? 'System Online — Live Sync Active' : 'Offline Mode — Saving To Disaster Outbox'}
+        </span>
+      </div>
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Intake Form */}
         <div className="space-y-4">
@@ -164,15 +207,13 @@ export default function ReportsPage() {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={handleSubmit}
-            disabled={isSubmitting || isExtracting || (!rawText.trim() && !uploadedFile)}
+            disabled={isSubmitting || (!rawText.trim() && !uploadedFile)}
             className="w-full btn-primary py-3.5 text-base disabled:opacity-50"
           >
             {isSubmitting ? (
-              <><Loader2 className="w-5 h-5 animate-spin" /> Submitting...</>
-            ) : isExtracting ? (
-              <><Sparkles className="w-5 h-5 animate-pulse" /> Extracting with AI...</>
+              <><Loader2 className="w-5 h-5 animate-spin" /> Saving Report...</>
             ) : (
-              <><Sparkles className="w-5 h-5" /> Submit & Extract</>
+              <><Sparkles className="w-5 h-5" /> Submit To Backend Queue</>
             )}
           </motion.button>
         </div>
@@ -224,9 +265,9 @@ export default function ReportsPage() {
           ) : (
             <div className="flex flex-col items-center justify-center py-16 text-[#6B7280]">
               <FileText className="w-12 h-12 mb-3 opacity-30" />
-              <p className="text-sm">Submit a report to see AI extraction results</p>
+              <p className="text-sm">Submit a report to hand it off to the backend extraction pipeline</p>
               <p className="text-xs mt-1 opacity-60">
-                Gemini will identify localities, issues, urgency signals, and more
+                Eventarc will trigger Gemini extraction after the raw report lands in Firebase
               </p>
             </div>
           )}

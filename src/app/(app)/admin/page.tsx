@@ -2,14 +2,23 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Shield, Database, Loader2, CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react';
+import { Shield, Database, Loader2, CheckCircle2, AlertTriangle, Trash2, Sparkles } from 'lucide-react';
 import PageShell from '@/components/layout/PageShell';
 import { batchWrite, Timestamp } from '@/lib/firebase/firestore';
-import { seedLocalities, seedVolunteers, seedReports, seedCampPlans, seedPatientVisits, seedMedicineStock } from '@/data/seed';
+import {
+  seedLocalities,
+  seedVolunteers,
+  seedReports,
+  seedExtractedSignals,
+  seedCampPlans,
+  seedPatientVisits,
+  seedMedicineStock,
+} from '@/data/seed';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { collection, getDocs, writeBatch, doc } from 'firebase/firestore/lite';
 import { db } from '@/lib/firebase/config';
+import { demoDb } from '@/lib/firebase/demo';
 
 export default function AdminPage() {
   const { userDoc } = useAuth();
@@ -34,6 +43,26 @@ export default function AdminPage() {
     const results: string[] = [];
 
     try {
+      // 0. Ensure current user is a coordinator in Firestore to pass security rules
+      const coordinatorDoc = {
+        uid: userDoc?.uid,
+        displayName: userDoc?.displayName || 'Demo Coordinator',
+        email: userDoc?.email || 'demo@sevasetu.ai',
+        role: 'COORDINATOR',
+        createdAt: Timestamp.now(),
+      };
+      
+      // We use doc() and setDoc() style logic via batch to ensure it's created
+      const coordinatorOp = {
+        collection: 'users',
+        docId: userDoc?.uid || '',
+        data: coordinatorDoc,
+      };
+      
+      await batchWrite([coordinatorOp]);
+      results.push(`✅ Coordinator profile established`);
+      setSeedResults([...results]);
+
       // Seed Localities
       const locOps = seedLocalities.map((loc, i) => ({
         collection: 'localities',
@@ -54,14 +83,38 @@ export default function AdminPage() {
       results.push(`✅ ${volOps.length} volunteers seeded`);
       setSeedResults([...results]);
 
-      // Seed Reports
-      const repOps = seedReports.map((rep, i) => ({
-        collection: 'community_reports',
+      // Seed Raw Reports
+      const rawReportOps = seedReports.map((rep, i) => ({
+        collection: 'raw_reports',
         docId: `report_${String(i + 1).padStart(3, '0')}`,
-        data: { ...rep, submittedBy: userDoc?.uid || '', submitterName: userDoc?.displayName || '', createdAt: Timestamp.now() },
+        data: {
+          ...rep,
+          clientEventId: `report_${String(i + 1).padStart(3, '0')}`,
+          submittedBy: userDoc?.uid || '',
+          submitterName: userDoc?.displayName || '',
+          fileUrls: [],
+          storageUri: null,
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+          lastSyncedAt: Timestamp.now(),
+        },
       }));
-      await batchWrite(repOps);
-      results.push(`✅ ${repOps.length} reports seeded`);
+      await batchWrite(rawReportOps);
+      results.push(`✅ ${rawReportOps.length} raw reports seeded`);
+      setSeedResults([...results]);
+
+      const extractedReportOps = seedExtractedSignals.map((signal, i) => ({
+        collection: 'extracted_reports',
+        docId: `report_${String(i + 1).padStart(3, '0')}`,
+        data: {
+          ...signal,
+          sourceCollection: 'raw_reports',
+          createdAt: Timestamp.now(),
+          processedAt: Timestamp.now(),
+        },
+      }));
+      await batchWrite(extractedReportOps);
+      results.push(`✅ ${extractedReportOps.length} extracted signals seeded`);
       setSeedResults([...results]);
 
       // Seed Camp Plans
@@ -108,7 +161,7 @@ export default function AdminPage() {
   async function handleClearData() {
     if (!confirm('Are you sure you want to clear ALL seeded data? This cannot be undone.')) return;
     setIsClearing(true);
-    const collections = ['localities', 'volunteer_profiles', 'community_reports', 'camp_plans', 'patient_visits', 'medicine_stock', 'dispense_logs', 'followups'];
+    const collections = ['localities', 'volunteer_profiles', 'raw_reports', 'extracted_reports', 'outbox_events', 'camp_plans', 'patient_visits', 'medicine_stock', 'dispense_logs', 'followups'];
 
     try {
       for (const col of collections) {
@@ -130,7 +183,29 @@ export default function AdminPage() {
   return (
     <PageShell title="Admin Panel" subtitle="Seed demo data and manage the database">
       <div className="max-w-2xl space-y-6">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card border-[#D4622B] bg-primary-pale">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Sparkles className="w-5 h-5 text-[#D4622B]" />
+              <div>
+                <h3 className="font-semibold text-[#1A1A1A]">Demo Mode</h3>
+                <p className="text-xs text-[#6B7280]">Bypass Firebase and use static data for presentations</p>
+              </div>
+            </div>
+            <button
+              onClick={() => demoDb.isDemoMode() ? demoDb.disable() : demoDb.enable()}
+              className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${
+                demoDb.isDemoMode() 
+                  ? 'bg-[#D4622B] text-white shadow-lg' 
+                  : 'bg-white border border-[#E5E2DC] text-[#6B7280]'
+              }`}
+            >
+              {demoDb.isDemoMode() ? 'Demo Mode: ON' : 'Turn On Demo Mode'}
+            </button>
+          </div>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="card">
           <div className="flex items-center gap-3 mb-4">
             <Database className="w-5 h-5 text-[#D4622B]" />
             <h3 className="font-semibold text-[#1A1A1A]">Seed Demo Data</h3>

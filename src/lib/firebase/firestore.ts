@@ -16,6 +16,7 @@ import {
   DocumentData,
 } from 'firebase/firestore/lite';
 import { db } from './config';
+import { demoDb } from './demo';
 
 // ---- Generic CRUD helpers ----
 
@@ -23,6 +24,9 @@ export async function getDocument<T>(
   collectionName: string,
   docId: string
 ): Promise<T | null> {
+  if (demoDb.isDemoMode()) {
+    return demoDb.getDocument<T & { id?: string; uid?: string }>(collectionName, docId);
+  }
   const docRef = doc(db, collectionName, docId);
   const docSnap = await getDoc(docRef);
   if (docSnap.exists()) {
@@ -35,6 +39,9 @@ export async function getCollection<T>(
   collectionName: string,
   ...constraints: QueryConstraint[]
 ): Promise<T[]> {
+  if (demoDb.isDemoMode()) {
+    return demoDb.getCollection<T>(collectionName);
+  }
   const q = constraints.length > 0
     ? query(collection(db, collectionName), ...constraints)
     : collection(db, collectionName);
@@ -47,6 +54,9 @@ export async function addDocument(
   data: DocumentData,
   docId?: string
 ): Promise<string> {
+  if (demoDb.isDemoMode()) {
+    return docId || Math.random().toString(36).substring(7);
+  }
   if (docId) {
     await setDoc(doc(db, collectionName, docId), data);
     return docId;

@@ -9,15 +9,15 @@ import {
   Users,
   MapPin,
   FileText,
-  TrendingUp,
   CalendarRange,
   ArrowRight,
   AlertTriangle,
 } from 'lucide-react';
 import { getCollection } from '@/lib/firebase/firestore';
-import { Locality, CampPlan, CommunityReport, VolunteerProfile } from '@/types';
-import { urgencyBgColor, formatDate, formatNumber } from '@/lib/utils';
+import { Locality, CampPlan, ExtractedSignal, VolunteerProfile } from '@/types';
+import { urgencyBgColor, formatDate } from '@/lib/utils';
 import Link from 'next/link';
+import DemoTour from '@/components/demo/DemoTour';
 
 const stagger = {
   hidden: {},
@@ -58,7 +58,7 @@ export default function DashboardPage() {
   const { userDoc } = useAuth();
   const [localities, setLocalities] = useState<Locality[]>([]);
   const [camps, setCamps] = useState<CampPlan[]>([]);
-  const [reports, setReports] = useState<CommunityReport[]>([]);
+  const [reports, setReports] = useState<ExtractedSignal[]>([]);
   const [volunteers, setVolunteers] = useState<VolunteerProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -68,7 +68,7 @@ export default function DashboardPage() {
         const [locs, cps, reps, vols] = await Promise.all([
           getCollection<Locality>('localities'),
           getCollection<CampPlan>('camp_plans'),
-          getCollection<CommunityReport>('community_reports'),
+          getCollection<ExtractedSignal>('extracted_reports'),
           getCollection<VolunteerProfile>('volunteer_profiles'),
         ]);
         setLocalities(locs);
@@ -118,6 +118,7 @@ export default function DashboardPage() {
               animate="show"
               variants={stagger}
               className="lg:col-span-2 card !p-0"
+              id="priority-localities"
             >
               <div className="flex items-center justify-between p-5 pb-0">
                 <div>
@@ -131,9 +132,24 @@ export default function DashboardPage() {
 
               <div className="p-5 space-y-3">
                 {topLocalities.length === 0 ? (
-                  <div className="text-center py-8 text-[#6B7280]">
-                    <MapPin className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                    <p className="text-sm">No localities yet. Seed demo data from Admin page.</p>
+                  <div className="text-center py-12 px-6">
+                    <div className="w-16 h-16 rounded-3xl bg-[#F0EDE8] flex items-center justify-center mx-auto mb-4">
+                      <MapPin className="w-8 h-8 text-[#6B7280] opacity-40" />
+                    </div>
+                    <h4 className="text-lg font-bold text-[#1A1A1A]">No localities tracked yet</h4>
+                    <p className="text-sm text-[#6B7280] mt-2 max-w-xs mx-auto">
+                      Start by adding a locality or use our demo dataset to see the platform in action.
+                    </p>
+                    <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+                      <Link href="/admin">
+                        <button className="btn-primary w-full sm:w-auto px-8">
+                          Seed Demo Data
+                        </button>
+                      </Link>
+                      <button className="btn-outline w-full sm:w-auto">
+                        Add Manually
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   topLocalities.map((loc, i) => (
@@ -169,6 +185,7 @@ export default function DashboardPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
                 className="card"
+                id="next-camp"
               >
                 <div className="flex items-center gap-2 mb-4">
                   <CalendarRange className="w-5 h-5 text-[#2D6A4F]" />
@@ -213,6 +230,7 @@ export default function DashboardPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.4 }}
                   className="card border-[#2D6A4F] bg-secondary-pale"
+                  id="active-camp"
                 >
                   <div className="flex items-center gap-2 mb-3">
                     <Activity className="w-5 h-5 text-[#2D6A4F]" />
@@ -234,6 +252,7 @@ export default function DashboardPage() {
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: 0.5 }}
                   className="card border-urgency-critical/20 urgency-critical"
+                  id="critical-alert"
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <AlertTriangle className="w-5 h-5 text-urgency-critical" />
@@ -249,6 +268,7 @@ export default function DashboardPage() {
           </div>
         </>
       )}
+      <DemoTour />
     </PageShell>
   );
 }

@@ -12,6 +12,16 @@ import { auth, db } from './config';
 import { UserDoc, UserRole } from '@/types';
 
 const googleProvider = new GoogleAuthProvider();
+const PUBLIC_ONBOARDING_ROLES = new Set<UserRole>([
+  UserRole.DOCTOR,
+  UserRole.PHARMACIST,
+  UserRole.FIELD_VOLUNTEER,
+  UserRole.SUPPORT,
+]);
+
+function isPublicOnboardingRole(role: UserRole): boolean {
+  return PUBLIC_ONBOARDING_ROLES.has(role);
+}
 
 /**
  * Sign in with Google — tries popup first, falls back to redirect if popup fails.
@@ -90,17 +100,20 @@ export async function createUserDoc(
   user: User,
   role?: UserRole
 ): Promise<UserDoc> {
-  // Bootstrap: if no users exist, first user becomes COORDINATOR
-  let assignedRole = role;
-  if (!assignedRole) {
-    try {
-      const usersSnap = await withTimeout(getDocs(collection(db, 'users')), 4000);
-      assignedRole = usersSnap.empty ? UserRole.COORDINATOR : UserRole.FIELD_VOLUNTEER;
-    } catch {
-      // Default to chosen role or COORDINATOR if Firestore is unreachable
-      assignedRole = UserRole.COORDINATOR;
-    }
+  let isFirstUser = false;
+
+  try {
+    const usersSnap = await withTimeout(getDocs(collection(db, 'users')), 4000);
+    isFirstUser = usersSnap.empty;
+  } catch (err) {
+    console.warn('Failed to verify first-user bootstrap:', err instanceof Error ? err.message : err);
   }
+
+  const assignedRole = isFirstUser
+    ? UserRole.COORDINATOR
+    : role && isPublicOnboardingRole(role)
+      ? role
+      : UserRole.FIELD_VOLUNTEER;
 
   const userDoc: UserDoc = {
     uid: user.uid,
@@ -119,5 +132,9 @@ export async function createUserDoc(
  * Update user role
  */
 export async function updateUserRole(uid: string, role: UserRole): Promise<void> {
+  if (role === UserRole.COORDINATOR) {
+    throw new Error('Coordinator role cannot be assigned from the client.');
+  }
+
   await setDoc(doc(db, 'users', uid), { role }, { merge: true });
 }

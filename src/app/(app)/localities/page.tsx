@@ -4,7 +4,7 @@ import { MapPin, List, Sparkles, Loader2, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { getCollection, updateDocument } from '@/lib/firebase/firestore';
-import { Locality, ExtractedReport } from '@/types';
+import { Locality, ExtractedSignal } from '@/types';
 import { urgencyBgColor, urgencyColor, formatDate } from '@/lib/utils';
 import { loadMapsLibrary, loadMarkerLibrary, loadVisualizationLibrary } from '@/lib/maps/config';
 import { computeBaseUrgencyScore, scoreToLevel } from '@/lib/scoring/deterministic';
@@ -57,80 +57,74 @@ export default function LocalitiesPage() {
       // Add markers for each locality
       localities.forEach((loc) => {
         const markerColor = urgencyColor(loc.urgencyLevel);
-        const size = loc.urgencyScore > 70 ? 20 : loc.urgencyScore > 50 ? 16 : 12;
+        const size = loc.urgencyScore > 75 ? 22 : loc.urgencyScore > 55 ? 18 : 14;
 
         const pinElement = document.createElement('div');
+        pinElement.className = 'custom-marker';
         pinElement.innerHTML = `
           <div style="
             width: ${size * 2}px;
             height: ${size * 2}px;
             border-radius: 50%;
-            background: ${markerColor}30;
-            border: 3px solid ${markerColor};
+            background: ${markerColor}20;
+            border: 2px solid ${markerColor};
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: transform 0.2s;
-            box-shadow: 0 0 ${size}px ${markerColor}40;
-          ">
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 ${size}px ${markerColor}30;
+          " onmouseover="this.style.transform='scale(1.2)'; this.style.background='${markerColor}40';" onmouseout="this.style.transform='scale(1)'; this.style.background='${markerColor}20';">
             <div style="
               width: ${size}px;
               height: ${size}px;
               border-radius: 50%;
               background: ${markerColor};
+              box-shadow: 0 0 10px ${markerColor}60;
             "></div>
           </div>
         `;
-
-        pinElement.addEventListener('mouseenter', () => {
-          pinElement.firstElementChild?.setAttribute('style',
-            (pinElement.firstElementChild?.getAttribute('style') || '') + 'transform: scale(1.3);'
-          );
-        });
-        pinElement.addEventListener('mouseleave', () => {
-          pinElement.firstElementChild?.setAttribute('style',
-            (pinElement.firstElementChild?.getAttribute('style') || '').replace('transform: scale(1.3);', '')
-          );
-        });
 
         const marker = new AdvancedMarkerElement({
           map,
           position: loc.coordinates,
           content: pinElement,
-          title: `${loc.name} — Score: ${loc.urgencyScore}`,
+          title: `${loc.name} (${loc.urgencyLevel})`,
         });
 
         marker.addListener('click', () => {
           setSelected(loc);
+          map.panTo(loc.coordinates);
+          map.setZoom(10);
         });
 
         markersRef.current.push(marker);
       });
 
-      // Try heatmap
+      // Enhanced Heatmap
       try {
         const { HeatmapLayer } = await loadVisualizationLibrary();
         const heatmapData = localities.map((loc) => ({
           location: new google.maps.LatLng(loc.coordinates.lat, loc.coordinates.lng),
-          weight: loc.urgencyScore / 100,
+          weight: loc.urgencyScore,
         }));
 
-        new HeatmapLayer({
+        const heatmap = new HeatmapLayer({
           data: heatmapData,
           map,
-          radius: 60,
-          opacity: 0.4,
+          radius: 40,
+          opacity: 0.6,
           gradient: [
             'rgba(0, 0, 0, 0)',
-            'rgba(101, 163, 13, 0.4)',
-            'rgba(217, 119, 6, 0.6)',
-            'rgba(234, 88, 12, 0.7)',
+            'rgba(64, 145, 108, 0.4)',
+            'rgba(82, 183, 136, 0.5)',
+            'rgba(244, 162, 97, 0.6)',
+            'rgba(231, 111, 81, 0.7)',
             'rgba(220, 38, 38, 0.8)',
           ],
         });
-      } catch {
-        console.log('Heatmap library not available, using markers only');
+      } catch (e) {
+        console.warn('Heatmap layer failed:', e);
       }
 
       setMapLoaded(true);
@@ -157,9 +151,9 @@ export default function LocalitiesPage() {
     setRescoring(true);
     try {
       // Step 1: Fetch extracted reports for this locality
-      const allReports = await getCollection<ExtractedReport>('extracted_reports');
+      const allReports = await getCollection<ExtractedSignal>('extracted_reports');
       let localityReports = allReports.filter(
-        (r) => r.locality.toLowerCase() === loc.name.toLowerCase()
+        (r) => r.locality.rawName.toLowerCase() === loc.name.toLowerCase()
       );
 
       // Fallback: if no extracted_reports exist, synthesize from locality's own data
@@ -167,13 +161,11 @@ export default function LocalitiesPage() {
         const { Timestamp: FBTimestamp } = await import('firebase/firestore/lite');
         localityReports = [{
           reportId: 'synthetic',
-          locality: loc.name,
-          issueTypes: loc.issues,
-          urgencySignals: loc.urgencyLevel === 'CRITICAL' ? ['urgent', 'immediate attention needed'] : ['needs attention'],
-          estimatedAffected: loc.population ? Math.round(loc.population * 0.05) : 100,
-          supportNeeded: [],
-          confidence: 0.7,
-          entities: {},
+          locality: { rawName: loc.name, canonicalId: loc.id || null, confidence: 1.0 },
+          needs: loc.issues.map(i => ({ taxonomyCode: i, label: i, severity: 3, affectedEstimate: loc.population ? Math.round(loc.population * 0.05) : 100, evidenceSpan: '', confidence: 0.7 })),
+          urgencySignals: [],
+          geo: { lat: loc.coordinates?.lat || null, lng: loc.coordinates?.lng || null, geohash: null, source: 'unknown' },
+          model: { provider: 'vertex-ai', name: 'synthetic', version: '1.0', promptVersion: '1.0' },
           processedAt: FBTimestamp.now(),
         }];
       }
@@ -189,7 +181,7 @@ export default function LocalitiesPage() {
           localityName: loc.name,
           baseScore,
           breakdown,
-          reports: localityReports.map((r) => r.issueTypes.join(', ')).join('; ') || loc.issues?.join(', '),
+          reports: localityReports.map((r) => r.needs.map((n: { label: string }) => n.label).join(', ')).join('; ') || loc.issues?.join(', '),
         }),
       });
       const data = await response.json();

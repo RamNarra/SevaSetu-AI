@@ -10,22 +10,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'campTitle is required' }, { status: 400 });
     }
 
-    const prompt = `You are a summary generation AI for SevaSetu AI, an NGO health camp platform.
-
-Generate a comprehensive camp summary for "${campTitle}".
-
-Patient visit data: ${JSON.stringify(patientVisits)}
-Medicine dispensing: ${JSON.stringify(dispenseLogs)}
-Follow-ups needed: ${JSON.stringify(followups)}
-
-Generate a professional, concise camp summary in markdown format including:
-1. Key statistics (patients served, consultations, medicines dispensed, referrals, follow-ups)
-2. Notable health patterns observed
-3. Critical cases requiring follow-up
-4. Recommendations for the next camp in this area
-5. Resource adequacy assessment
-
-Keep it clear and actionable for NGO coordinators.`;
+    const prompt = `You are an impact analyst AI for SevaSetu AI.
+    
+    Generate a comprehensive camp summary for "${campTitle}".
+    
+    Data:
+    - Patient visit records: ${JSON.stringify(patientVisits)}
+    - Medicine logs: ${JSON.stringify(dispenseLogs)}
+    - Explicit follow-ups: ${JSON.stringify(followups)}
+    
+    Structure the markdown summary as follows:
+    1. # Camp Impact Snapshot (Stats table)
+    2. # Key Health Trends (Bullet points)
+    3. # Predictive Follow-ups (CRITICAL: Analyze patient data and predict who else needs follow-up, not just those already marked)
+    4. # Resource Gaps & Recommendations (Next-step actions for the coordinator)
+    
+    Use a professional and supportive tone.`;
 
     const response = await genai.models.generateContent({
       model: MODEL,
