@@ -138,7 +138,7 @@ export default function ActiveDeploymentsPage() {
       <h2 className="font-bold text-xl">Real-time Patient Flow</h2>
       <div className="flex items-center gap-2">
         <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">Offline Mode Queue: 0</span>
-        <span className="px-2 py-1 bg-red-100 text-red-600 text-xs rounded">SLA Alert: Triage > 30m</span>
+        <span className="px-2 py-1 bg-red-100 text-red-600 text-xs rounded">SLA Alert: Triage &gt; 30m</span>
       </div>
     </div>
     <div className="flex gap-4">

@@ -4,7 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { genai, parseJsonResponse, MODELS } from '@/lib/ai/client';
 import { ReportStatus } from '@/types';
 import { extractedSignalSchema } from '@/lib/ai/schemas';
-import { TypeSchema } from '@google/genai';
+
 
 // The required system prompt for extraction.
 const EXTRACTION_PROMPT = `You are an AI assistant for SevaSetu AI, an NGO resource allocation platform for community health camps in India.
@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
             }
           },
           required: ['locality', 'needs', 'urgencySignals', 'geo', 'model']
-        } as TypeSchema
+        } as any
       }
     });
 

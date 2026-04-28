@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     
     volunteersSnap.forEach((doc) => {
       const data = doc.data() as VolunteerProfile;
-      data.uid = doc.id;
+      data.userId = doc.id;
       allVolunteers.push(data);
     });
 
@@ -35,12 +35,12 @@ export async function POST(request: NextRequest) {
 
     // 4. Return the Top candidates
     const top3 = matches.map(m => ({
-      volunteerId: m.volunteer.uid,
+      volunteerId: m.volunteer.userId,
       displayName: m.volunteer.displayName,
       role: m.volunteer.role,
       matchScore: m.matchScore,
       explanation: m.explanation,
-      coordinates: m.volunteer.currentLocation
+      coordinates: m.volunteer.coordinates
     }));
 
     return NextResponse.json({

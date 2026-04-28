@@ -24,7 +24,7 @@ export async function rankVolunteers(
   const ranked = eligible.map(v => {
     let baseScore = 0.5; // default 
     if (v.role === constraints.needsRole) baseScore += 0.3;
-    if (v.metrics?.rating) baseScore += (v.metrics.rating / 5) * 0.1;
+    if (v.rating) baseScore += (v.rating / 5) * 0.1;
     
     return {
       volunteer: v,
@@ -38,7 +38,7 @@ export async function rankVolunteers(
   // LLM Explanation phase for top candidates
   try {
     const prompt = `You are a scheduling AI. Explain why these volunteers were matched for report ${signal.reportId}. 
-      Candidates: ${JSON.stringify(topCands.map(c => ({id: c.volunteer.uid, score: c.matchScore, role: c.volunteer.role})))}
+      Candidates: ${JSON.stringify(topCands.map(c => ({id: c.volunteer.userId, score: c.matchScore, role: c.volunteer.role})))}
       Return a JSON map: { [volunteerUid]: "1 sentence reason" }`;
       
     const res = await genai.models.generateContent({
@@ -50,7 +50,7 @@ export async function rankVolunteers(
     const parsed = parseJsonResponse(res.text || '') as Record<string, string>;
     
     topCands.forEach(c => {
-      const uid = c.volunteer.uid;
+      const uid = c.volunteer.userId;
       // Reject hallucinated IDs implicitly by mapping to known keys
       if (uid && parsed[uid]) {
         c.explanation = parsed[uid];

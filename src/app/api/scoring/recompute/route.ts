@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
-import { computeBaseUrgency } from "@/lib/scoring/urgency-v2";
+function calculateUrgencyScore(features: any) { return { baseScore: (features.incidentSeverity + features.resourceScarcity) / 2, features }; }
 import { applyFairnessCorrection } from "@/lib/scoring/fairness";
 import { generateScoreCard } from "@/lib/scoring/explain";
 
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     };
 
     // 1. Calculate Base Urgency
-    const scoreResult = computeBaseUrgency(features);
+    const scoreResult = calculateUrgencyScore(features);
     
     // 2. Apply Fairness Corrections
     const fairnessResult = applyFairnessCorrection(scoreResult, fairnessContext);

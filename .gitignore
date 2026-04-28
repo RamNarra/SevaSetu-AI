@@ -44,3 +44,16 @@ next-env.d.ts
 # local planning docs
 /Planning/
 .env*.local
+
+# Firebase Build Artifacts and Debug Logs
+.firebase
+firebase-debug.log
+*.txt
+all_eslint.txt
+all_tsc.txt
+eslint_errors.txt
+lint_output.txt
+out.txt
+targeted_eslint.txt
+ts_errors.txt
+update_ui.js

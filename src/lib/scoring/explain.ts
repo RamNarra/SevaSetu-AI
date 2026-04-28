@@ -1,5 +1,12 @@
-import { ScoreResult } from "./urgency-v2";
-import { FairnessResult } from "./fairness"; // Renamed from fairnessMead
+export interface ScoreResult {
+  baseScore: number;
+  features: {
+    incidentSeverity: number;
+    resourceScarcity: number;
+  };
+}
+
+import { FairnessResult } from "./fairness";
 
 export interface ScoreCard {
   overallScore: number;

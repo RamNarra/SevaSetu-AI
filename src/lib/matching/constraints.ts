@@ -19,7 +19,7 @@ export function filterCandidates(
     }
     
     // 2. Active assignments check (not currently implemented fully)
-    if (v.status === 'UNAVAILABLE') return false;
+    if (v.availability === 'ON_LEAVE' || v.availability === 'BUSY') return false;
     
     return true;
   });

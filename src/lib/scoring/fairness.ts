@@ -1,4 +1,4 @@
-import { ScoreResult } from "./urgency-v2";
+import { ScoreResult } from "./explain";
 
 export interface FairnessContext {
   districtAllocationRatio: number; // 0 to 1, how much this district has already received relative to its needs
