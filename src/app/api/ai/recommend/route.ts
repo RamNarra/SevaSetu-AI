@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { genai, MODEL, parseJsonResponse } from '@/lib/ai/client';
+import { generateContentWithFallback, MODEL, parseJsonResponse } from '@/lib/ai/client';
+import { withAuth } from '@/lib/auth/withAuth';
+import { aiRecommendRequestSchema } from '@/lib/ai/requestSchemas';
+import { recordAiAudit } from '@/lib/ai/audit';
 
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request: NextRequest) => {
+  const t0 = Date.now();
   try {
     const body = await request.json();
-    const { campTitle, localityName, requiredRoles, volunteers } = body;
-
-    if (!campTitle || typeof campTitle !== 'string') {
-      return NextResponse.json({ success: false, error: 'campTitle is required' }, { status: 400 });
+    const parsed = aiRecommendRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid request', issues: parsed.error.issues },
+        { status: 400 }
+      );
     }
-    if (!Array.isArray(volunteers) || volunteers.length === 0) {
-      return NextResponse.json({ success: false, error: 'volunteers array is required' }, { status: 400 });
-    }
+    const { campTitle, localityName, requiredRoles, volunteers } = parsed.data;
 
     const prompt = `You are a resource matching AI for SevaSetu AI.
     
@@ -35,7 +39,7 @@ export async function POST(request: NextRequest) {
       "reasoning": "string (mention language/experience match)"
     }`;
 
-    const response = await genai.models.generateContent({
+    const response = await generateContentWithFallback({
       model: MODEL,
       contents: prompt,
       config: { 
@@ -48,9 +52,17 @@ export async function POST(request: NextRequest) {
     const text = response.text || '';
     const result = parseJsonResponse(text);
 
+    void recordAiAudit({
+      op: 'recommend',
+      model: MODEL,
+      promptVersion: 'ai.recommend.v1',
+      latencyMs: Date.now() - t0,
+      validationPassed: Array.isArray(result),
+    });
+
     return NextResponse.json({ success: true, result });
   } catch (error) {
     console.error('Resource matching error:', error);
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
   }
-}
+});

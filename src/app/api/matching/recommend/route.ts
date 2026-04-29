@@ -1,52 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
-import { rankVolunteers } from '@/lib/matching/ranker';
+import { semanticRankVolunteers } from '@/lib/matching/semantic';
 import { VolunteerProfile, ExtractedSignal } from '@/types';
+import { withAuth } from '@/lib/auth/withAuth';
+import { z } from 'zod';
 
-export async function POST(request: NextRequest) {
+const bodySchema = z.object({
+  reportId: z.string().min(1),
+  topK: z.number().int().min(1).max(20).optional().default(5),
+});
+
+export const POST = withAuth(async (request: NextRequest) => {
   try {
-    const { reportId } = await request.json();
-
-    if (!reportId) {
-      return NextResponse.json({ success: false, error: 'Missing reportId' }, { status: 400 });
+    const body = await request.json();
+    const parsed = bodySchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid request', issues: parsed.error.issues },
+        { status: 400 }
+      );
     }
+    const { reportId, topK } = parsed.data;
 
-    // 1. Fetch Extracted Signal
     const reportDoc = await adminDb.collection('extracted_reports').doc(reportId).get();
     if (!reportDoc.exists) {
-      return NextResponse.json({ success: false, error: 'Report not found or not extracted' }, { status: 404 });
+      return NextResponse.json(
+        { success: false, error: 'Report not found or not extracted' },
+        { status: 404 }
+      );
     }
-
     const signal = reportDoc.data() as ExtractedSignal;
 
-    // 2. Fetch all Volunteer Profiles
-    // For MVP, we fetch all. In prod, we'd use a geo-fence query via geohash (Phase 2.4)
     const volunteersSnap = await adminDb.collection('volunteer_profiles').get();
-    const allVolunteers: VolunteerProfile[] = [];
-    
-    volunteersSnap.forEach((doc) => {
-      const data = doc.data() as VolunteerProfile;
-      data.userId = doc.id;
-      allVolunteers.push(data);
+    const allVolunteers: VolunteerProfile[] = volunteersSnap.docs.map((d) => {
+      const data = d.data() as VolunteerProfile;
+      return { ...data, id: d.id, userId: data.userId ?? d.id };
     });
 
-    // 3. Run the Deterministic Two-Pass Matching Engine
-    const matches = await rankVolunteers(signal, allVolunteers);
-
-    // 4. Return the Top candidates
-    const top3 = matches.map(m => ({
-      volunteerId: m.volunteer.userId,
-      displayName: m.volunteer.displayName,
-      role: m.volunteer.role,
-      matchScore: m.matchScore,
-      explanation: m.explanation,
-      coordinates: m.volunteer.coordinates
-    }));
+    const { matches, mode } = await semanticRankVolunteers({
+      signal,
+      volunteers: allVolunteers,
+      constraints: { strictAvailability: true },
+      topK,
+    });
 
     return NextResponse.json({
       success: true,
       reportId,
-      candidates: top3,
+      mode,
+      candidates: matches.map((m) => ({
+        volunteerId: m.volunteer.userId ?? m.volunteer.id,
+        displayName: m.volunteer.displayName,
+        role: m.volunteer.role,
+        matchScore: m.matchScore,
+        semanticScore: m.semanticScore,
+        constraintScore: m.constraintScore,
+        proximityScore: m.proximityScore,
+        explanation: m.reasons.slice(0, 3).join('; '),
+        coordinates: m.volunteer.coordinates ?? null,
+      })),
     });
   } catch (error) {
     console.error('Matching engine error:', error);
@@ -55,4 +67,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});

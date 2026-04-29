@@ -4,6 +4,7 @@ import { MapPin, List, Sparkles, Loader2, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { getCollection, updateDocument } from '@/lib/firebase/firestore';
+import { authFetch } from '@/lib/firebase/authFetch';
 import { Locality, ExtractedSignal } from '@/types';
 import { urgencyBgColor, urgencyColor, formatDate } from '@/lib/utils';
 import { loadMapsLibrary, loadMarkerLibrary, loadVisualizationLibrary } from '@/lib/maps/config';
@@ -174,7 +175,7 @@ export default function LocalitiesPage() {
       const { score: baseScore, breakdown } = computeBaseUrgencyScore(localityReports, loc);
 
       // Step 3: Call AI for adjustment + reasoning
-      const response = await fetch('/api/ai/score', {
+      const response = await authFetch('/api/ai/score', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

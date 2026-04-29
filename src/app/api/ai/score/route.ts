@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { genai, MODEL, parseJsonResponse } from '@/lib/ai/client';
+import { generateContentWithFallback, MODEL, parseJsonResponse } from '@/lib/ai/client';
+import { withAuth } from '@/lib/auth/withAuth';
+import { aiScoreRequestSchema } from '@/lib/ai/requestSchemas';
+import { recordAiAudit } from '@/lib/ai/audit';
 
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request: NextRequest) => {
+  const t0 = Date.now();
   try {
     const body = await request.json();
-    const { localityName, baseScore, breakdown, reports } = body;
-
-    if (!localityName || typeof localityName !== 'string') {
-      return NextResponse.json({ success: false, error: 'localityName is required' }, { status: 400 });
+    const parsed = aiScoreRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid request', issues: parsed.error.issues },
+        { status: 400 }
+      );
     }
-    if (baseScore == null || typeof baseScore !== 'number') {
-      return NextResponse.json({ success: false, error: 'baseScore must be a number' }, { status: 400 });
-    }
+    const { localityName, baseScore, breakdown, reports } = parsed.data;
 
     const prompt = `You are an urgency scoring AI for SevaSetu AI, an NGO health camp platform.
 
@@ -38,7 +42,7 @@ Return ONLY valid JSON:
   "reasoning": "string - 2-3 sentence explanation for coordinators"
 }`;
 
-    const response = await genai.models.generateContent({
+    const response = await generateContentWithFallback({
       model: MODEL,
       contents: prompt,
       config: { 
@@ -51,9 +55,18 @@ Return ONLY valid JSON:
     const text = response.text || '';
     const result = parseJsonResponse(text);
 
+    void recordAiAudit({
+      op: 'score',
+      model: MODEL,
+      promptVersion: 'score.v1',
+      latencyMs: Date.now() - t0,
+      validationPassed: true,
+      collection: 'localities',
+    });
+
     return NextResponse.json({ success: true, result });
   } catch (error) {
     console.error('Urgency scoring error:', error);
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
   }
-}
+});

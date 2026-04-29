@@ -11,16 +11,54 @@ export const genai = useVertexAI
     })
   : new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// Models configured by task as per Phase 1.1
+// Models configured by task.
+// NOTE: gemini-2.5-pro has a 0-request/day free-tier quota, so we default
+// every task to gemini-2.5-flash (which has a generous free quota: 10 RPM /
+// 250 RPD / 250k TPM). Override per-task via env vars if you have a paid plan.
 export const MODELS = {
-  extraction: 'gemini-2.5-pro',
-  routing: 'gemini-2.5-flash',
-  vision: 'gemini-2.5-pro',
-  embeddings: 'text-embedding-004',
+  extraction: process.env.GEMINI_MODEL_EXTRACTION || 'gemini-2.5-flash',
+  routing: process.env.GEMINI_MODEL_ROUTING || 'gemini-2.5-flash',
+  vision: process.env.GEMINI_MODEL_VISION || 'gemini-2.5-flash',
+  embeddings: process.env.GEMINI_MODEL_EMBEDDINGS || 'text-embedding-004',
+};
+
+// Ordered fallback chain for quota / 5xx retries — tried left-to-right.
+export const MODEL_FALLBACKS: Record<string, string[]> = {
+  [MODELS.extraction]: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
+  [MODELS.routing]: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
+  [MODELS.vision]: ['gemini-2.5-flash', 'gemini-2.0-flash'],
 };
 
 // Default fallback for legacy endpoints
 export const MODEL = MODELS.routing;
+
+type GenParams = Parameters<typeof genai.models.generateContent>[0];
+
+/**
+ * Wrapper around `genai.models.generateContent` that retries on quota /
+ * transient errors and transparently falls back to alternate models defined
+ * in `MODEL_FALLBACKS`. Returns the first successful response.
+ */
+export async function generateContentWithFallback(params: GenParams) {
+  const primary = params.model;
+  const chain = [primary, ...(MODEL_FALLBACKS[primary] ?? [])].filter(
+    (m, i, arr) => arr.indexOf(m) === i,
+  );
+  let lastErr: unknown;
+  for (const model of chain) {
+    try {
+      return await genai.models.generateContent({ ...params, model });
+    } catch (err: unknown) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      const isQuota = /RESOURCE_EXHAUSTED|429|quota/i.test(msg);
+      const isTransient = /5\d\d|UNAVAILABLE|DEADLINE_EXCEEDED/i.test(msg);
+      if (!isQuota && !isTransient) throw err;
+      // try next model in chain
+    }
+  }
+  throw lastErr;
+}
 
 /**
  * Extract and parse JSON from Gemini response text.

@@ -5,6 +5,7 @@ import PageShell from '@/components/layout/PageShell';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CalendarRange, MapPin, Users, Sparkles, Loader2, Check, Plus, Star } from 'lucide-react';
 import { getCollection, addDocument, Timestamp } from '@/lib/firebase/firestore';
+import { authFetch } from '@/lib/firebase/authFetch';
 import { Locality, VolunteerProfile, CampStatus, StaffRecommendation } from '@/types';
 import { urgencyBgColor, urgencyColor, roleLabel, getInitials } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -56,7 +57,7 @@ export default function PlannerPage() {
 
     try {
       const availableVols = volunteers.filter((v) => v.availability === 'AVAILABLE');
-      const response = await fetch('/api/ai/recommend', {
+      const response = await authFetch('/api/ai/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -99,14 +100,26 @@ export default function PlannerPage() {
   }
 
   async function handleCreateCamp() {
-    if (!selectedLocality || !campTitle || !campDate) {
-      toast.error('Please fill in all camp details');
+    if (!selectedLocality) {
+      toast.error('Please select a target locality first');
+      return;
+    }
+    if (!campTitle.trim()) {
+      toast.error('Please enter a camp title');
+      return;
+    }
+    if (!campDate) {
+      toast.error('Please pick a scheduled date');
+      return;
+    }
+    if (selectedStaff.length === 0) {
+      toast.error('Please select at least one staff member');
       return;
     }
 
     setIsSaving(true);
     try {
-      await addDocument('camp_plans', {
+      const campId = await addDocument('camp_plans', {
         localityId: selectedLocality.id,
         localityName: selectedLocality.name,
         title: campTitle,
@@ -119,7 +132,34 @@ export default function PlannerPage() {
         notes: '',
         createdAt: Timestamp.now(),
       });
-      toast.success('Camp plan created!');
+
+      // Materialise assignment docs so the Operations page picks them up.
+      // Each selected volunteer becomes one active assignment row.
+      const volMap = new Map(volunteers.map((v) => [v.userId || v.id, v]));
+      await Promise.all(
+        selectedStaff.map((volunteerId) => {
+          const vol = volMap.get(volunteerId);
+          return addDocument('assignments', {
+            volunteerId,
+            campId,
+            campTitle,
+            localityId: selectedLocality.id,
+            localityName: selectedLocality.name,
+            role: vol?.role || 'support',
+            assignedAt: Timestamp.now(),
+            eventLog: [
+              {
+                timestamp: new Date().toISOString(),
+                type: 'assigned',
+                message: `Assigned to ${campTitle}`,
+                actor: user?.displayName || 'Coordinator',
+              },
+            ],
+          });
+        })
+      );
+
+      toast.success('Camp plan created — staff dispatched to Operations');
       setCampTitle('');
       setCampDate('');
       setSelectedLocality(null);
@@ -193,7 +233,20 @@ export default function PlannerPage() {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-[#6B7280] mb-1 block">Scheduled Date</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-[#6B7280] block">Scheduled Date</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const t = new Date();
+                      t.setDate(t.getDate() + 1);
+                      setCampDate(t.toISOString().slice(0, 10));
+                    }}
+                    className="text-[10px] font-medium text-[#D4622B] hover:underline"
+                  >
+                    Use tomorrow
+                  </button>
+                </div>
                 <input
                   type="date"
                   value={campDate}
@@ -336,7 +389,7 @@ export default function PlannerPage() {
               whileHover={{ scale: 1.02, y: -2 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleCreateCamp}
-              disabled={isSaving || !campTitle || !campDate}
+              disabled={isSaving}
               className="w-full btn-secondary py-3.5 text-base disabled:opacity-50"
             >
               {isSaving ? (

@@ -173,3 +173,70 @@ export function analyzeUrgencyScore(
     decayBypassed: hasNoDecaySignals,
   };
 }
+
+// ----------------------------------------------------------------------------
+// Locality-feature scoring API (used by /api/scoring/recompute + fairness layer)
+// ----------------------------------------------------------------------------
+
+export interface LocalityFeatures {
+  populationDensity: number;   // 0-1
+  resourceScarcity: number;    // 0-1
+  incidentSeverity: number;    // 0-1
+  vulnerabilityIndex: number;  // 0-1
+}
+
+export interface ScoreResult {
+  baseScore: number; // 0-1 scaled
+  features: LocalityFeatures;
+  components: {
+    severityComponent: number;
+    scarcityComponent: number;
+    densityComponent: number;
+    vulnerabilityComponent: number;
+  };
+}
+
+const FEATURE_WEIGHTS = {
+  severity: 0.40,
+  scarcity: 0.25,
+  vulnerability: 0.25,
+  density: 0.10,
+};
+
+function clamp01(value: number): number {
+  if (Number.isNaN(value)) return 0;
+  return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * Compute a base urgency score (0-1) from aggregated locality features.
+ * Pure function — deterministic, explainable, judge-defensible.
+ */
+export function computeBaseUrgency(features: LocalityFeatures): ScoreResult {
+  const f: LocalityFeatures = {
+    populationDensity: clamp01(features.populationDensity),
+    resourceScarcity: clamp01(features.resourceScarcity),
+    incidentSeverity: clamp01(features.incidentSeverity),
+    vulnerabilityIndex: clamp01(features.vulnerabilityIndex),
+  };
+
+  const severityComponent = f.incidentSeverity * FEATURE_WEIGHTS.severity;
+  const scarcityComponent = f.resourceScarcity * FEATURE_WEIGHTS.scarcity;
+  const vulnerabilityComponent = f.vulnerabilityIndex * FEATURE_WEIGHTS.vulnerability;
+  const densityComponent = f.populationDensity * FEATURE_WEIGHTS.density;
+
+  const baseScore = clamp01(
+    severityComponent + scarcityComponent + vulnerabilityComponent + densityComponent
+  );
+
+  return {
+    baseScore,
+    features: f,
+    components: {
+      severityComponent,
+      scarcityComponent,
+      densityComponent,
+      vulnerabilityComponent,
+    },
+  };
+}

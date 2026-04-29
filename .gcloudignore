@@ -1,0 +1,17 @@
+.git
+.gitignore
+node_modules
+.next
+.firebase
+.vercel
+.vscode
+.github
+*.md
+QA_SIMULATION_REPORT*.md
+implementation_plan.md
+deploy_env.*
+.env
+.env.local
+.env.development
+.env.test
+# DO NOT exclude .env.production — needed for Next.js client bundle build

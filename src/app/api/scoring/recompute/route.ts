@@ -1,59 +1,58 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
-function calculateUrgencyScore(features: any) { return { baseScore: (features.incidentSeverity + features.resourceScarcity) / 2, features }; }
+import { computeBaseUrgency } from "@/lib/scoring/urgency-v2";
 import { applyFairnessCorrection } from "@/lib/scoring/fairness";
 import { generateScoreCard } from "@/lib/scoring/explain";
+import { withAuth } from "@/lib/auth/withAuth";
+import { scoringRecomputeRequestSchema } from "@/lib/ai/requestSchemas";
 
-export async function POST(req: Request) {
+export const POST = withAuth(async (req: NextRequest) => {
   try {
     const body = await req.json();
-    const { localityId } = body;
-
-    if (!localityId) {
-      return NextResponse.json({ error: "localityId is required" }, { status: 400 });
+    const parsed = scoringRecomputeRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid request", issues: parsed.error.issues },
+        { status: 400 }
+      );
     }
+    const { localityId } = parsed.data;
 
     const localityRef = adminDb.collection("localities").doc(localityId);
     const doc = await localityRef.get();
-
     if (!doc.exists) {
       return NextResponse.json({ error: "Locality not found" }, { status: 404 });
     }
 
-    const data = doc.data();
-
-    // Mock extraction of features from locality data
-    // In production, this would aggregate real sub-collection data (reports, supplies, etc.)
+    const data = doc.data() ?? {};
     const features = {
-      populationDensity: data?.metrics?.populationDensity ?? 0.5,
-      resourceScarcity: data?.metrics?.resourceScarcity ?? 0.6,
-      incidentSeverity: data?.metrics?.incidentSeverity ?? 0.7,
-      vulnerabilityIndex: data?.metrics?.vulnerabilityIndex ?? 0.4,
+      populationDensity: data.metrics?.populationDensity ?? Math.min(1, (data.population ?? 1000) / 50000),
+      resourceScarcity:
+        data.metrics?.resourceScarcity ?? (data.lastCampDate ? 0.5 : 0.8),
+      incidentSeverity:
+        data.metrics?.incidentSeverity ?? (data.urgencyScore ? data.urgencyScore / 100 : 0.6),
+      vulnerabilityIndex: data.metrics?.vulnerabilityIndex ?? data.vulnerabilityIndex ?? 0.5,
     };
 
     const fairnessContext = {
-      districtAllocationRatio: data?.metrics?.districtAllocationRatio ?? 0.3,
-      historicalNeglectIndex: data?.metrics?.historicalNeglectIndex ?? 0.5,
+      districtAllocationRatio: data.metrics?.districtAllocationRatio ?? 0.3,
+      historicalNeglectIndex:
+        data.metrics?.historicalNeglectIndex ?? (1 - features.resourceScarcity),
     };
 
-    // 1. Calculate Base Urgency
-    const scoreResult = calculateUrgencyScore(features);
-    
-    // 2. Apply Fairness Corrections
+    const scoreResult = computeBaseUrgency(features);
     const fairnessResult = applyFairnessCorrection(scoreResult, fairnessContext);
-
-    // 3. Generate Human Readable Explainability
     const scoreCard = generateScoreCard(scoreResult, fairnessResult);
 
-    // 4. Update the document
     await localityRef.update({
       score_version: "v2",
-      urgencyScore: scoreCard.overallScore, // 0-100 
+      urgencyScore: scoreCard.overallScore,
       urgencyLevel: scoreCard.level,
       scoreDetails: {
         features,
         adjustments: fairnessResult.adjustments,
         explanations: scoreCard.explanations,
+        components: scoreResult.components,
         calculatedAt: new Date().toISOString(),
       },
       updatedAt: new Date().toISOString(),
@@ -63,10 +62,11 @@ export async function POST(req: Request) {
       success: true,
       localityId,
       scoreCard,
+      features,
     });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error recomputing score:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const msg = error instanceof Error ? error.message : "Internal error";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
+});

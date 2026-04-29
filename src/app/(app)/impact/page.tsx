@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getCollection } from '@/lib/firebase/firestore';
+import { authFetch } from '@/lib/firebase/authFetch';
 import { CampPlan, PatientVisit, MedicineStock, Followup, VisitStage } from '@/types';
 import toast from 'react-hot-toast';
 
@@ -120,7 +121,7 @@ export default function ImpactPage() {
 
     setIsGenerating(true);
     try {
-      const response = await fetch('/api/ai/summarize', {
+      const response = await authFetch('/api/ai/summarize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

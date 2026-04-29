@@ -12,6 +12,7 @@ import {
   queueReportForOffline,
 } from '@/lib/offline/outbox';
 import { submitRawReportToPipeline } from '@/lib/reports/pipeline';
+import { authFetch } from '@/lib/firebase/authFetch';
 
 const sampleReports = [
             "Visited Rampur village on 3rd April. Saw many children with skin rashes and diarrhea. Clean water not available. At least 50 families affected. Need dermatologist and pediatrician. Very urgent \u2014 last camp was 8 months ago.",
@@ -107,19 +108,26 @@ export default function ReportsPage() {
             });
 
             // Trigger the server-side extraction
-            const extractRes = await fetch('/api/ai/extract', {
+            const extractToast = toast.loading('AI is reading the report...');
+            const extractRes = await authFetch('/api/ai/extract', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ reportId: clientEventId, text: rawText.trim() })
             });
 
             const extractData = await extractRes.json();
+            toast.dismiss(extractToast);
             if (extractData.success) {
                 setExtractionResult(extractData.result);
                 toast.success('Report stored and AI extraction completed.');
             } else {
                 setExtractionResult(null);
-                toast.error('Report stored, but extraction failed: ' + extractData.error);
+                const raw = String(extractData.error || 'Unknown error');
+                // Trim verbose Gemini error payloads to a friendly headline.
+                const friendly = /quota|RESOURCE_EXHAUSTED|429/i.test(raw)
+                    ? 'AI quota reached \u2014 the report is saved. You can retry from the Workbench.'
+                    : raw.length > 140 ? raw.slice(0, 140) + '\u2026' : raw;
+                toast.error('Report stored. Extraction issue: ' + friendly, { duration: 6000 });
             }
 
             setRawText('');
@@ -158,19 +166,8 @@ export default function ReportsPage() {
           {isOnline ? 'System Online — Live Sync Active' : 'Offline Mode — Saving To Disaster Outbox'}
         </span>
       </div>
-      
-  {/* PHASE 3.2: Report intake workbench elements */}
-  <div className="bg-white p-4 rounded-xl border border-gray-200 mb-6">
-    <h2 className="font-bold text-xl mb-2">Multimodal Intake Queue</h2>
-    <div className="flex gap-2 mb-4">
-      <button className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg">Upload Audio/Voice Note</button>
-      <button className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg">Upload PDF/Image</button>
-      <button className="px-4 py-2 bg-yellow-100 text-yellow-700 rounded-lg">Review Pending Extractions (2)</button>
-    </div>
-    <p className="text-sm text-gray-500">Human approval workflow active for low-confidence signals.</p>
-  </div>
 
-<div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid lg:grid-cols-2 gap-6">
         {/* Intake Form */}
         <div className="space-y-4">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card">

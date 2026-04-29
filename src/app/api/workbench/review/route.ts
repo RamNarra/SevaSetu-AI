@@ -1,7 +1,9 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
-import { ReportStatus } from '@/types';
+import { ReportStatus, UserRole } from '@/types';
+import { withRoles } from '@/lib/auth/withAuth';
+import { workbenchReviewRequestSchema } from '@/lib/ai/requestSchemas';
 
 type ReviewDecision = 'approve' | 'reject';
 
@@ -11,25 +13,19 @@ function toStatus(decision: ReviewDecision): ReportStatus {
     : ReportStatus.HUMAN_REJECTED;
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withRoles(
+  [UserRole.COORDINATOR],
+  async (request: NextRequest, ctx) => {
   try {
     const body = await request.json();
-    const reportId = typeof body.reportId === 'string' ? body.reportId.trim() : '';
-    const decision = body.decision as ReviewDecision;
-
-    if (!reportId) {
+    const parsed = workbenchReviewRequestSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: 'Missing reportId' },
+        { success: false, error: 'Invalid request', issues: parsed.error.issues },
         { status: 400 }
       );
     }
-
-    if (decision !== 'approve' && decision !== 'reject') {
-      return NextResponse.json(
-        { success: false, error: 'Invalid review decision' },
-        { status: 400 }
-      );
-    }
+    const { reportId, decision, notes } = parsed.data;
 
     const rawReportRef = adminDb.collection('raw_reports').doc(reportId);
     const rawReportSnap = await rawReportRef.get();
@@ -46,6 +42,7 @@ export async function POST(request: NextRequest) {
     await rawReportRef.set(
       {
         status: nextStatus,
+        humanReviewerUid: ctx.uid,
         updatedAt: FieldValue.serverTimestamp(),
         lastSyncedAt: FieldValue.serverTimestamp(),
       },
@@ -55,7 +52,9 @@ export async function POST(request: NextRequest) {
     await adminDb.collection('extracted_reports').doc(reportId).set(
       {
         humanReviewDecision: decision,
+        humanReviewerUid: ctx.uid,
         humanReviewedAt: FieldValue.serverTimestamp(),
+        humanReviewNotes: notes ?? null,
       },
       { merge: true }
     );
@@ -72,4 +71,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});

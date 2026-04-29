@@ -19,6 +19,7 @@ import { CampPlan, ExtractedSignal, Locality, VolunteerPresence, VolunteerProfil
 import { analyzeUrgencyScore, type UrgencyV2Breakdown } from '@/lib/scoring/urgency-v2';
 import { cn, formatNumber, roleLabel, urgencyColor } from '@/lib/utils';
 import { getCollection, orderBy } from '@/lib/firebase/firestore';
+import { authFetch } from '@/lib/firebase/authFetch';
 import VolunteerCoverageMap from '@/components/command-center/VolunteerCoverageMap';
 
 interface SimulationCandidate {
@@ -72,7 +73,13 @@ async function fetchCommandCenterData() {
 
   return {
     localities: [...localities].sort((a, b) => b.urgencyScore - a.urgencyScore),
-    reports: reports.filter(r => r.status === 'APPROVED'),
+    // Include APPROVED (production-promoted) AND seeded/EXTRACTED entries
+    // that lack an explicit status. This keeps the demo populated while still
+    // hiding HUMAN_REJECTED / FAILED ones.
+    reports: reports.filter(r => {
+      const s = r.status;
+      return !s || s === 'APPROVED' || s === 'EXTRACTED' || s === 'HUMAN_APPROVED';
+    }),
     volunteers,
     camps,
     presence,
@@ -406,7 +413,7 @@ export default function CommandCenterClient() {
     });
 
     try {
-      const response = await fetch('/api/matching/recommend', {
+      const response = await authFetch('/api/matching/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reportId: zone.primaryReportId }),
@@ -449,7 +456,7 @@ export default function CommandCenterClient() {
     }
 
     try {
-      const res = await fetch('/api/matching/dispatch', {
+      const res = await authFetch('/api/matching/dispatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

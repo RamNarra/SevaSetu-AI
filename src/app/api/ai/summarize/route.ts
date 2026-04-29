@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { genai, MODEL } from '@/lib/ai/client';
+import { generateContentWithFallback, MODEL } from '@/lib/ai/client';
+import { withAuth } from '@/lib/auth/withAuth';
+import { aiSummarizeRequestSchema } from '@/lib/ai/requestSchemas';
+import { recordAiAudit } from '@/lib/ai/audit';
 
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request: NextRequest) => {
+  const t0 = Date.now();
   try {
     const body = await request.json();
-    const { campTitle, patientVisits, dispenseLogs, followups } = body;
-
-    if (!campTitle || typeof campTitle !== 'string') {
-      return NextResponse.json({ success: false, error: 'campTitle is required' }, { status: 400 });
+    const parsed = aiSummarizeRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid request', issues: parsed.error.issues },
+        { status: 400 }
+      );
     }
+    const { campTitle, patientVisits, dispenseLogs, followups } = parsed.data;
 
     const prompt = `You are an impact analyst AI for SevaSetu AI.
     
@@ -27,10 +34,18 @@ export async function POST(request: NextRequest) {
     
     Use a professional and supportive tone.`;
 
-    const response = await genai.models.generateContent({
+    const response = await generateContentWithFallback({
       model: MODEL,
       contents: prompt,
       config: { temperature: 0.4, maxOutputTokens: 2048 },
+    });
+
+    void recordAiAudit({
+      op: 'summarize',
+      model: MODEL,
+      promptVersion: 'summarize.v1',
+      latencyMs: Date.now() - t0,
+      validationPassed: true,
     });
 
     return NextResponse.json({
@@ -41,4 +56,4 @@ export async function POST(request: NextRequest) {
     console.error('Summary generation error:', error);
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
   }
-}
+});

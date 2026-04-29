@@ -6,34 +6,22 @@ import { useEffect, useState } from 'react';
 import { getCollection, orderBy } from '@/lib/firebase/firestore';
 import { VolunteerProfile, CampPlan, UserRole } from '@/types';
 import { roleLabel, getInitials } from '@/lib/utils';
+import { authFetch } from '@/lib/firebase/authFetch';
 import toast from 'react-hot-toast';
 
 const roleFilters = [
   { value: 'ALL', label: 'All Roles' },
-  { value: UserRole.DOCTOR, label: '🩺 Doctors' },
-  { value: UserRole.PHARMACIST, label: '💊 Pharmacists' },
-  { value: UserRole.FIELD_VOLUNTEER, label: '📋 Field' },
-  { value: UserRole.SUPPORT, label: '🤝 Support' },
+  { value: UserRole.DOCTOR, label: '\uD83E\uDE7A Doctors' },
+  { value: UserRole.PHARMACIST, label: '\uD83D\uDC8A Pharmacists' },
+  { value: UserRole.FIELD_VOLUNTEER, label: '\uD83D\uDCCB Field' },
+  { value: UserRole.SUPPORT, label: '\uD83E\uDD1D Support' },
 ];
 
 function MatchScoreBar({ score }: { score: number }) {
   const color = score >= 80 ? '#2D6A4F' : score >= 60 ? '#D97706' : '#DC2626';
   return (
     <div className="flex items-center gap-2 mt-2">
-      
-  {/* PHASE 3.3: Allocation Cockpit elements */}
-  <div className="bg-white p-4 rounded-xl border border-gray-200 mb-6">
-    <h2 className="font-bold text-lg mb-2">What-if Staffing Simulation</h2>
-    <div className="flex gap-4 items-center">
-       <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg">Run Simulation</button>
-       <button className="px-4 py-2 bg-green-600 text-white rounded-lg flex items-center gap-2">
-         Lock Assignment (Transactional)
-       </button>
-       <span className="text-sm text-gray-500">Explainable recommendation matrix ready. Constraints enabled.</span>
-    </div>
-  </div>
-
-<div className="flex-1 h-2 rounded-full bg-[#E5E2DC] overflow-hidden">
+      <div className="flex-1 h-2 rounded-full bg-[#E5E2DC] overflow-hidden">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${score}%` }}
@@ -51,6 +39,10 @@ interface MatchCandidate {
   volunteerId: string;
   volunteer: VolunteerProfile;
   matchScore: number;
+  semanticScore?: number;
+  distanceKm?: number | null;
+  embeddingMode?: 'vector' | 'lexical';
+  reasons?: string[];
   explanation: string;
   conflictAlert: boolean;
 }
@@ -98,9 +90,8 @@ export default function AllocationPage() {
         availableOnly,
       };
 
-      const res = await fetch('/api/allocation/recommend', {
+      const res = await authFetch('/api/allocation/recommend', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           campId: currentCamp.id,
           constraints,
@@ -123,9 +114,8 @@ export default function AllocationPage() {
     if (!currentCamp) return;
     setAssigningId(c.volunteerId);
     try {
-      const res = await fetch('/api/allocation/assign', {
+      const res = await authFetch('/api/allocation/assign', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           campId: currentCamp.id,
           volunteerId: c.volunteerId,
@@ -309,6 +299,35 @@ export default function AllocationPage() {
                     <div className="p-3 rounded-lg bg-blue-50 border border-blue-100 text-sm text-blue-900 leading-snug">
                       <span className="font-semibold">Match Reasoning:</span> {c.explanation}
                     </div>
+
+                    {(c.semanticScore !== undefined || c.distanceKm != null || c.embeddingMode) && (
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+                        {c.embeddingMode && (
+                          <span className={`px-2 py-1 rounded-full border ${c.embeddingMode === 'vector' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                            {c.embeddingMode === 'vector' ? 'Vector match' : 'Lexical fallback'}
+                          </span>
+                        )}
+                        {c.semanticScore !== undefined && (
+                          <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700">
+                            Semantic {(c.semanticScore * 100).toFixed(0)}%
+                          </span>
+                        )}
+                        {c.distanceKm != null && (
+                          <span className="px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700">
+                            {c.distanceKm.toFixed(1)} km
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {Array.isArray(c.reasons) && c.reasons.length > 0 && (
+                      <details className="mt-3 text-xs">
+                        <summary className="cursor-pointer text-[#2D6A4F] font-semibold">Why this volunteer?</summary>
+                        <ul className="mt-2 ml-4 list-disc text-[#1B2E25]/70 space-y-0.5">
+                          {c.reasons.map((r, idx) => <li key={idx}>{r}</li>)}
+                        </ul>
+                      </details>
+                    )}
 
                     {c.conflictAlert && (
                       <div className="mt-3 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2 shadow-sm">

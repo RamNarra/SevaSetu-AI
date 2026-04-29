@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { subscribeToCollection, getCollection } from '@/lib/firebase/firestore';
+import { authFetch } from '@/lib/firebase/authFetch';
 import { VolunteerProfile } from '@/types';
 import toast from 'react-hot-toast';
 
@@ -79,7 +80,7 @@ export default function ActiveDeploymentsPage() {
     setDispensing(true);
 
     try {
-      const res = await fetch('/api/operations/dispense', {
+      const res = await authFetch('/api/operations/dispense', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -131,24 +132,7 @@ export default function ActiveDeploymentsPage() {
 
   return (
     <PageShell title="Operations Center" subtitle="Live Deployment Tracking">
-      
-  {/* PHASE 3.4: Operations Center elements */}
-  <div className="bg-white p-4 rounded-xl border border-gray-200 mb-6">
-    <div className="flex justify-between items-center mb-4">
-      <h2 className="font-bold text-xl">Real-time Patient Flow</h2>
-      <div className="flex items-center gap-2">
-        <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">Offline Mode Queue: 0</span>
-        <span className="px-2 py-1 bg-red-100 text-red-600 text-xs rounded">SLA Alert: Triage &gt; 30m</span>
-      </div>
-    </div>
-    <div className="flex gap-4">
-      <button className="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded">View Audit Trail</button>
-      <button className="text-sm bg-orange-100 text-orange-700 px-3 py-1 rounded">Medicine Depletion Forecast</button>
-      <button className="text-sm bg-gray-100 text-gray-700 px-3 py-1 rounded">Conflict Resolution Drawer</button>
-    </div>
-  </div>
-
-<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Kanban / Deployment Tracking */}
         <div className="col-span-2">

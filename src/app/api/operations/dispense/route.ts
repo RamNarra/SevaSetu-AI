@@ -1,14 +1,24 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { NextRequest, NextResponse } from 'next/server';
+import { withRoles } from '@/lib/auth/withAuth';
+import { dispenseRequestSchema } from '@/lib/ai/requestSchemas';
+import { UserRole } from '@/types';
 
-export async function POST(req: NextRequest) {
+export const POST = withRoles(
+  [UserRole.COORDINATOR, UserRole.PHARMACIST, UserRole.DOCTOR],
+  async (req: NextRequest, ctx) => {
   try {
-    const { assignmentId, medicineId, amountDispensed, dispensedBy } = await req.json();
-
-    if (!assignmentId || !medicineId || !amountDispensed || amountDispensed <= 0) {
-      return NextResponse.json({ error: 'Missing or invalid parameters' }, { status: 400 });
+    const body = await req.json();
+    const parsed = dispenseRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid request', issues: parsed.error.issues },
+        { status: 400 }
+      );
     }
+    const { assignmentId, medicineId, amountDispensed } = parsed.data;
+    const dispensedBy = parsed.data.dispensedBy ?? ctx.uid;
 
     const stockRef = adminDb.collection('medicine_stock').doc(medicineId);
     const auditRef = adminDb.collection('audit_logs').doc();
@@ -57,6 +67,9 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error('Dispense transaction failed:', error);
     const msg = error instanceof Error ? error.message : 'Internal Server Error';
+    if (msg.includes('Insufficient stock')) {
+      return NextResponse.json({ error: msg }, { status: 409 });
+    }
     return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
+});

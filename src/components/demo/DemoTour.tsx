@@ -47,11 +47,12 @@ export default function DemoTour() {
   const [currentStep, setCurrentStep] = useState(0);
 
   useEffect(() => {
-    // Check if first time
-    const hasSeenTour = localStorage.getItem('sevasetu_tour_seen');
-    if (!hasSeenTour) {
-      // Small delay to let page load
-      setTimeout(() => setIsActive(true), 2000);
+    // Tour only auto-launches when explicitly opted-in via `?tour=1`.
+    // Prevents the floating modal from hijacking a live judge demo.
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tour') === '1') {
+      setIsActive(true);
     }
   }, []);
 
