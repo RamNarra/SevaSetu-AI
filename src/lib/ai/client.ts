@@ -16,17 +16,17 @@ export const genai = useVertexAI
 // every task to gemini-2.5-flash (which has a generous free quota: 10 RPM /
 // 250 RPD / 250k TPM). Override per-task via env vars if you have a paid plan.
 export const MODELS = {
-  extraction: process.env.GEMINI_MODEL_EXTRACTION || 'gemini-2.5-flash',
-  routing: process.env.GEMINI_MODEL_ROUTING || 'gemini-2.5-flash',
-  vision: process.env.GEMINI_MODEL_VISION || 'gemini-2.5-flash',
+  extraction: process.env.GEMINI_MODEL_EXTRACTION || 'gemini-3-flash-preview',
+  routing: process.env.GEMINI_MODEL_ROUTING || 'gemini-3-flash-preview',
+  vision: process.env.GEMINI_MODEL_VISION || 'gemini-3-flash-preview',
   embeddings: process.env.GEMINI_MODEL_EMBEDDINGS || 'text-embedding-004',
 };
 
 // Ordered fallback chain for quota / 5xx retries — tried left-to-right.
 export const MODEL_FALLBACKS: Record<string, string[]> = {
-  [MODELS.extraction]: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
-  [MODELS.routing]: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
-  [MODELS.vision]: ['gemini-2.5-flash', 'gemini-2.0-flash'],
+  [MODELS.extraction]: ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
+  [MODELS.routing]: ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
+  [MODELS.vision]: ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.0-flash'],
 };
 
 // Default fallback for legacy endpoints

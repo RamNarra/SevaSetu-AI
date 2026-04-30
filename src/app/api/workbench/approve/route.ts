@@ -3,7 +3,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { withRoles } from '@/lib/auth/withAuth';
 import { workbenchApproveRequestSchema } from '@/lib/ai/requestSchemas';
-import { UserRole } from '@/types';
+import { ExtractedSignal, Locality, UserRole, UrgencyLevel } from '@/types';
+import { analyzeUrgencyScore } from '@/lib/scoring/urgency-v2';
+
+function scoreToUrgencyLevel(score: number): UrgencyLevel {
+  if (score >= 75) return UrgencyLevel.CRITICAL;
+  if (score >= 55) return UrgencyLevel.HIGH;
+  if (score >= 35) return UrgencyLevel.MEDIUM;
+  return UrgencyLevel.LOW;
+}
 
 export const POST = withRoles([UserRole.COORDINATOR], async (request: NextRequest, ctx) => {
   try {
@@ -34,6 +42,58 @@ export const POST = withRoles([UserRole.COORDINATOR], async (request: NextReques
       },
       { merge: true }
     );
+
+    const approvedExtractedSnap = await extractedRef.get();
+    const approvedExtracted = approvedExtractedSnap.data() as ExtractedSignal | undefined;
+    const localityId = approvedExtracted?.locality?.canonicalId ?? null;
+    const localityName = approvedExtracted?.locality?.rawName?.toLowerCase() ?? null;
+
+    if (localityId || localityName) {
+      let localityRef = localityId
+        ? adminDb.collection('localities').doc(localityId)
+        : null;
+      let localityDoc = localityRef ? await localityRef.get() : null;
+
+      if ((!localityDoc || !localityDoc.exists) && localityName) {
+        const localitiesSnap = await adminDb.collection('localities').get();
+        const matchedDoc = localitiesSnap.docs.find((doc) => {
+          const data = doc.data() as Locality;
+          return data.name?.toLowerCase() === localityName;
+        });
+        if (matchedDoc) {
+          localityRef = matchedDoc.ref;
+          localityDoc = matchedDoc;
+        }
+      }
+
+      if (localityRef && localityDoc?.exists) {
+        const localityData = localityDoc.data() as Locality;
+        const extractedSnap = await adminDb.collection('extracted_reports').get();
+        const relatedSignals = extractedSnap.docs
+          .map((doc) => doc.data() as ExtractedSignal & { status?: string })
+          .filter((signal) => {
+            const status = (signal as { status?: string }).status;
+            const canonicalId = signal.locality?.canonicalId?.toLowerCase() ?? null;
+            const rawName = signal.locality?.rawName?.toLowerCase() ?? null;
+            return (
+              (!status || status === 'APPROVED' || status === 'EXTRACTED' || status === 'HUMAN_APPROVED') &&
+              ((localityId && canonicalId === localityId.toLowerCase()) || (!!localityName && rawName === localityName))
+            );
+          });
+
+        const urgency = analyzeUrgencyScore(relatedSignals, {
+          vulnerabilityIndex: localityData.vulnerabilityIndex,
+          lastCampDate: localityData.lastCampDate?.toDate?.(),
+        });
+
+        await localityRef.update({
+          urgencyScore: urgency.finalScore,
+          urgencyLevel: scoreToUrgencyLevel(urgency.finalScore),
+          updatedAt: FieldValue.serverTimestamp(),
+          aiReasoning: localityData.aiReasoning || 'Urgency recalculated from approved field evidence.',
+        });
+      }
+    }
 
     return NextResponse.json({ success: true, reportId });
   } catch (error) {

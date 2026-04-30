@@ -6,7 +6,7 @@ import {
   Clock, Package, MapPin, Loader2, AlertTriangle, User,
   CheckCircle2, Syringe, Plus, ClipboardList
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { subscribeToCollection, getCollection } from '@/lib/firebase/firestore';
 import { authFetch } from '@/lib/firebase/authFetch';
 import { VolunteerProfile } from '@/types';
@@ -33,8 +33,11 @@ interface ActiveAssignment {
 
 interface MedicineStock {
   id: string;
-  name: string;
-  currentStock: number;
+  medicineName?: string;
+  name?: string;
+  quantityAvailable?: number;
+  quantityDispensed?: number;
+  currentStock?: number;
 }
 
 export default function ActiveDeploymentsPage() {
@@ -47,6 +50,23 @@ export default function ActiveDeploymentsPage() {
   const [dispenseMedicineId, setDispenseMedicineId] = useState('');
   const [dispenseAmount, setDispenseAmount] = useState(1);
   const [dispensing, setDispensing] = useState(false);
+
+  const enrichAssignment = useCallback((a: ActiveAssignment) => {
+    const vol = volunteers.get(a.volunteerId) || Object.values(Object.fromEntries(volunteers)).find(v => v.id === a.volunteerId);
+    let msElapsed = 0;
+    if (a.assignedAt) {
+      const timeMs = 
+        typeof a.assignedAt === 'object' && 'seconds' in a.assignedAt 
+          ? a.assignedAt.seconds * 1000 
+          : new Date(a.assignedAt).getTime();
+      msElapsed = Date.now() - timeMs;
+    }
+    return {
+      ...a,
+      volunteer: vol,
+      hoursElapsed: msElapsed / (1000 * 60 * 60)
+    };
+  }, [volunteers]);
 
   useEffect(() => {
     // Preload volunteers and stock
@@ -73,6 +93,20 @@ export default function ActiveDeploymentsPage() {
 
     return unsub;
   }, []);
+
+  useEffect(() => {
+    if (!selectedAssignment) {
+      return;
+    }
+
+    const refreshed = assignments
+      .map(enrichAssignment)
+      .find((assignment) => assignment.id === selectedAssignment.id);
+
+    if (refreshed) {
+      setSelectedAssignment(refreshed);
+    }
+  }, [assignments, enrichAssignment, selectedAssignment]);
 
   const handleDispense = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,23 +135,6 @@ export default function ActiveDeploymentsPage() {
     } finally {
       setDispensing(false);
     }
-  };
-
-  const enrichAssignment = (a: ActiveAssignment) => {
-    const vol = volunteers.get(a.volunteerId) || Object.values(Object.fromEntries(volunteers)).find(v => v.id === a.volunteerId);
-    let msElapsed = 0;
-    if (a.assignedAt) {
-      const timeMs = 
-        typeof a.assignedAt === 'object' && 'seconds' in a.assignedAt 
-          ? a.assignedAt.seconds * 1000 
-          : new Date(a.assignedAt).getTime();
-      msElapsed = Date.now() - timeMs;
-    }
-    return {
-      ...a,
-      volunteer: vol,
-      hoursElapsed: msElapsed / (1000 * 60 * 60)
-    };
   };
 
   const activeAssignments = assignments.map(enrichAssignment).filter(a => a.hoursElapsed !== undefined && a.hoursElapsed >= 0);
@@ -240,9 +257,15 @@ export default function ActiveDeploymentsPage() {
                       required
                     >
                       <option value="">Select Item...</option>
-                      {medicines.map(m => (
-                        <option value={m.id} key={m.id}>{m.name} (Stock: {m.currentStock})</option>
-                      ))}
+                      {medicines.map((m) => {
+                        const total = Number(m.quantityAvailable ?? m.currentStock ?? 0);
+                        const dispensed = Number(m.quantityDispensed ?? 0);
+                        const remaining = Math.max(0, total - dispensed);
+                        const label = m.medicineName || m.name || 'Unknown Item';
+                        return (
+                          <option value={m.id} key={m.id}>{label} (Stock: {remaining})</option>
+                        );
+                      })}
                     </select>
 
                     <div className="flex gap-2">

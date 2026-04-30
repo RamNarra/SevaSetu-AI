@@ -140,7 +140,7 @@ export interface ExtractedSignal {
     source: 'map_geocode' | 'report_text' | 'user_pin' | 'unknown';
   };
   model: {
-    provider: 'vertex-ai';
+    provider: string;
     name: string;
     version: string;
     promptVersion: string;

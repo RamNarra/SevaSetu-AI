@@ -9,6 +9,11 @@ import { extractRequestSchema } from '@/lib/ai/requestSchemas';
 import { recordAiAudit } from '@/lib/ai/audit';
 import { embedText, reportSummaryString } from '@/lib/ai/embeddings';
 import { encodeGeohash } from '@/lib/maps/geohash';
+import { seedLocalities } from '@/data/seed';
+
+const MODEL_PROVIDER = process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true'
+  ? 'vertex-ai'
+  : 'gemini-developer-api';
 
 // The required system prompt for extraction.
 const EXTRACTION_PROMPT = `You are an AI assistant for SevaSetu AI, an NGO resource allocation platform for community health camps in India.
@@ -45,12 +50,76 @@ Return ONLY a valid JSON object representing the ExtractedSignal with these exac
     "source": "report_text"
   },
   "model": {
-    "provider": "vertex-ai",
+    "provider": "${MODEL_PROVIDER}",
     "name": "gemini",
-    "version": "3.1-pro",
-    "promptVersion": "1.0"
+    "version": "${MODELS.extraction}",
+    "promptVersion": "extract.v3"
   }
 }`;
+
+function fallbackUrgencySignals(text: string) {
+  const normalized = text.toLowerCase();
+  const signals: Array<{ type: 'death' | 'hospitalization' | 'outbreak' | 'supply_stockout' | 'access_blocked' | 'vulnerable_group'; evidenceSpan: string; confidence: number }> = [];
+
+  if (/\bdeath|died\b/.test(normalized)) {
+    signals.push({ type: 'death', evidenceSpan: text.slice(0, 180), confidence: 0.92 });
+  }
+  if (/\bhospitalized|hospitalised|admitted\b/.test(normalized)) {
+    signals.push({ type: 'hospitalization', evidenceSpan: text.slice(0, 180), confidence: 0.9 });
+  }
+  if (/\btb\b|malaria|dengue|outbreak|diarrhea|diarrhoea|waterborne/.test(normalized)) {
+    signals.push({ type: 'outbreak', evidenceSpan: text.slice(0, 180), confidence: 0.86 });
+  }
+  if (/out of stock|no iron supplements|no supplements|stockout|ran out/.test(normalized)) {
+    signals.push({ type: 'supply_stockout', evidenceSpan: text.slice(0, 180), confidence: 0.88 });
+  }
+  if (/traveling \d+km|boat-only|access|blocked|impossible/.test(normalized)) {
+    signals.push({ type: 'access_blocked', evidenceSpan: text.slice(0, 180), confidence: 0.82 });
+  }
+  if (/pregnant women|children|elderly|tribal/.test(normalized)) {
+    signals.push({ type: 'vulnerable_group', evidenceSpan: text.slice(0, 180), confidence: 0.84 });
+  }
+
+  return signals;
+}
+
+function buildFallbackExtraction(reportId: string, text: string) {
+  const normalized = text.toLowerCase();
+  const locality = seedLocalities.find((candidate) => normalized.includes(candidate.name.toLowerCase()));
+  const matchedIssues = locality?.issues?.slice(0, 3) ?? ['general health screening'];
+  const severity = /urgent|severe|hospital|death|outbreak/.test(normalized) ? 4 : 3;
+  const affectedEstimate = Number(text.match(/(\d+)\+?/)?.[1] ?? 25);
+
+  return extractedSignalSchema.parse({
+    reportId,
+    locality: {
+      canonicalId: locality ? `loc_${locality.name.toLowerCase().replace(/\s+/g, '_')}` : null,
+      rawName: locality?.name ?? 'Unknown locality',
+      confidence: locality ? 0.94 : 0.45,
+    },
+    needs: matchedIssues.map((issue, index) => ({
+      taxonomyCode: issue.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''),
+      label: issue,
+      severity,
+      affectedEstimate: Math.max(affectedEstimate - index * 5, 5),
+      evidenceSpan: text.slice(0, 220),
+      confidence: Math.max(0.68, 0.9 - index * 0.08),
+    })),
+    urgencySignals: fallbackUrgencySignals(text),
+    geo: {
+      lat: locality?.coordinates.lat ?? null,
+      lng: locality?.coordinates.lng ?? null,
+      geohash: locality ? encodeGeohash(locality.coordinates.lat, locality.coordinates.lng, 6) : null,
+      source: locality ? 'map_geocode' : 'report_text',
+    },
+    model: {
+      provider: MODEL_PROVIDER,
+      name: 'fallback-extractor',
+      version: MODELS.extraction,
+      promptVersion: 'extract.v3.fallback',
+    },
+  });
+}
 
 export const POST = withAuth(async (request: NextRequest) => {
   let reportId: string | undefined;
@@ -143,107 +212,104 @@ export const POST = withAuth(async (request: NextRequest) => {
     const multimodal = attachments.length > 0;
 
     // Do Extraction (with model fallback for quota / 5xx)
-    const response = await generateContentWithFallback({
-      model: MODELS.extraction,
-      contents: [{
-        role: 'user',
-        parts: parts as unknown as Array<{ text?: string }>,
-      }],
-      config: {
-        temperature: 0.1,
-        maxOutputTokens: 2048,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'OBJECT',
-          properties: {
-            locality: {
-              type: 'OBJECT',
-              properties: {
-                canonicalId: { type: 'STRING', nullable: true },
-                rawName: { type: 'STRING' },
-                confidence: { type: 'NUMBER' }
-              },
-              required: ['rawName', 'confidence']
-            },
-            needs: {
-              type: 'ARRAY',
-              items: {
+    let responseText = '';
+    let modelCallFailed = false;
+    try {
+      const response = await generateContentWithFallback({
+        model: MODELS.extraction,
+        contents: [{
+          role: 'user',
+          parts: parts as unknown as Array<{ text?: string }>,
+        }],
+        config: {
+          temperature: 0.1,
+          maxOutputTokens: 2048,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'OBJECT',
+            properties: {
+              locality: {
                 type: 'OBJECT',
                 properties: {
-                  taxonomyCode: { type: 'STRING' },
-                  label: { type: 'STRING' },
-                  severity: { type: 'NUMBER' },
-                  affectedEstimate: { type: 'NUMBER' },
-                  evidenceSpan: { type: 'STRING' },
+                  canonicalId: { type: 'STRING', nullable: true },
+                  rawName: { type: 'STRING' },
                   confidence: { type: 'NUMBER' }
                 },
-                required: ['taxonomyCode', 'label', 'severity', 'affectedEstimate', 'evidenceSpan', 'confidence']
-              }
-            },
-            urgencySignals: {
-              type: 'ARRAY',
-              items: {
+                required: ['rawName', 'confidence']
+              },
+              needs: {
+                type: 'ARRAY',
+                items: {
+                  type: 'OBJECT',
+                  properties: {
+                    taxonomyCode: { type: 'STRING' },
+                    label: { type: 'STRING' },
+                    severity: { type: 'NUMBER' },
+                    affectedEstimate: { type: 'NUMBER' },
+                    evidenceSpan: { type: 'STRING' },
+                    confidence: { type: 'NUMBER' }
+                  },
+                  required: ['taxonomyCode', 'label', 'severity', 'affectedEstimate', 'evidenceSpan', 'confidence']
+                }
+              },
+              urgencySignals: {
+                type: 'ARRAY',
+                items: {
+                  type: 'OBJECT',
+                  properties: {
+                    type: { type: 'STRING', enum: ['death', 'hospitalization', 'outbreak', 'supply_stockout', 'access_blocked', 'vulnerable_group'] },
+                    evidenceSpan: { type: 'STRING' },
+                    confidence: { type: 'NUMBER' }
+                  },
+                  required: ['type', 'evidenceSpan', 'confidence']
+                }
+              },
+              geo: {
                 type: 'OBJECT',
                 properties: {
-                  type: { type: 'STRING', enum: ['death', 'hospitalization', 'outbreak', 'supply_stockout', 'access_blocked', 'vulnerable_group'] },
-                  evidenceSpan: { type: 'STRING' },
-                  confidence: { type: 'NUMBER' }
+                  lat: { type: 'NUMBER', nullable: true },
+                  lng: { type: 'NUMBER', nullable: true },
+                  geohash: { type: 'STRING', nullable: true },
+                  source: { type: 'STRING', enum: ['map_geocode', 'report_text', 'user_pin', 'unknown'] }
                 },
-                required: ['type', 'evidenceSpan', 'confidence']
+                required: ['source']
+              },
+              model: {
+                type: 'OBJECT',
+                properties: {
+                  provider: { type: 'STRING' },
+                  name: { type: 'STRING' },
+                  version: { type: 'STRING' },
+                  promptVersion: { type: 'STRING' }
+                },
+                required: ['provider', 'name', 'version', 'promptVersion']
               }
             },
-            geo: {
-              type: 'OBJECT',
-              properties: {
-                lat: { type: 'NUMBER', nullable: true },
-                lng: { type: 'NUMBER', nullable: true },
-                geohash: { type: 'STRING', nullable: true },
-                source: { type: 'STRING', enum: ['map_geocode', 'report_text', 'user_pin', 'unknown'] }
-              },
-              required: ['source']
-            },
-            model: {
-              type: 'OBJECT',
-              properties: {
-                provider: { type: 'STRING', enum: ['vertex-ai'] },
-                name: { type: 'STRING' },
-                version: { type: 'STRING' },
-                promptVersion: { type: 'STRING' }
-              },
-              required: ['provider', 'name', 'version', 'promptVersion']
-            }
-          },
-          required: ['locality', 'needs', 'urgencySignals', 'geo', 'model']
-        } as unknown as Record<string, unknown>
-      }
-    });
+            required: ['locality', 'needs', 'urgencySignals', 'geo', 'model']
+          } as unknown as Record<string, unknown>
+        }
+      });
 
-    const responseText = response.text || '';
+      responseText = response.text || '';
+    } catch (modelErr) {
+      console.warn('[extract] model call failed, using fallback extraction:', modelErr instanceof Error ? modelErr.message : modelErr);
+      modelCallFailed = true;
+    }
     let result: Record<string, unknown>;
     let zodErrors: string[] | undefined;
+    let usedFallbackExtraction = false;
 
     try {
+      if (modelCallFailed || !responseText.trim()) {
+        throw new Error('Model response unavailable');
+      }
       result = parseJsonResponse(responseText) as Record<string, unknown>;
       const parsedData = extractedSignalSchema.parse(result);
       result = parsedData;
     } catch (validationErr) {
       zodErrors = [validationErr instanceof Error ? validationErr.message : String(validationErr)];
-      await rawReportRef.update({ status: ReportStatus.FAILED }).catch(() => {});
-      await commReportRef.update({ status: ReportStatus.FAILED }).catch(() => {});
-      void recordAiAudit({
-        op: 'extract',
-        model: MODELS.extraction,
-        promptVersion: 'extract.v2.multimodal',
-        latencyMs: Date.now() - t0,
-        validationPassed: false,
-        zodErrors,
-        documentId: reportId,
-        collection: 'extracted_reports',
-      });
-      return NextResponse.json({
-        success: false,
-        error: 'Failed to parse extraction as JSON',
-      });
+      result = buildFallbackExtraction(reportId, text) as unknown as Record<string, unknown>;
+      usedFallbackExtraction = true;
     }
 
     // Geohash + embedding (best-effort, never blocks the user)
@@ -267,6 +333,7 @@ export const POST = withAuth(async (request: NextRequest) => {
       processedAt: FieldValue.serverTimestamp(),
       multimodal,
       attachments: attachments.length,
+      fallbackUsed: usedFallbackExtraction,
     };
     if (geohash) extractedData.geohash6 = geohash;
     if (embedding) extractedData.embedding = embedding;
@@ -275,12 +342,13 @@ export const POST = withAuth(async (request: NextRequest) => {
     void recordAiAudit({
       op: 'extract',
       model: MODELS.extraction,
-      promptVersion: 'extract.v2.multimodal',
+      promptVersion: 'extract.v3.multimodal',
       latencyMs: Date.now() - t0,
-      validationPassed: true,
+      validationPassed: !usedFallbackExtraction,
       documentId: reportId,
       collection: 'extracted_reports',
-      notes: multimodal ? `multimodal:${attachments.length}` : 'text',
+      notes: `${multimodal ? `multimodal:${attachments.length}` : 'text'}${usedFallbackExtraction ? '|fallback-extraction' : ''}`,
+      zodErrors,
     });
 
     // Update status to EXTRACTED and append report_events
@@ -296,7 +364,7 @@ export const POST = withAuth(async (request: NextRequest) => {
       updatedAt: FieldValue.serverTimestamp()
     }).catch(() => {});
 
-    return NextResponse.json({ success: true, result, reportId });
+    return NextResponse.json({ success: true, result, reportId, fallbackUsed: usedFallbackExtraction });
   } catch (error) {
     console.error('API /api/ai/extract Error:', error);
     if (reportId) {

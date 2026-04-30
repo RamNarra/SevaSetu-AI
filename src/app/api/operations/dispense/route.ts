@@ -30,14 +30,19 @@ export const POST = withRoles(
         throw new Error('Medicine stock not found');
       }
 
-      const currentStock = stockDoc.data()?.currentStock || 0;
-      if (currentStock < amountDispensed) {
+      const stockData = stockDoc.data() ?? {};
+      const totalStock = Number(stockData.quantityAvailable ?? stockData.currentStock ?? 0);
+      const alreadyDispensed = Number(stockData.quantityDispensed ?? 0);
+      const remainingStock = Math.max(0, totalStock - alreadyDispensed);
+      const medicineName = String(stockData.medicineName ?? stockData.name ?? 'Unknown');
+
+      if (remainingStock < amountDispensed) {
         throw new Error('Insufficient stock for dispense event');
       }
 
-      // Subtract stock
+      // Preserve total quantity and increment the dispensed counter.
       transaction.update(stockRef, {
-        currentStock: currentStock - amountDispensed,
+        quantityDispensed: alreadyDispensed + amountDispensed,
         updatedAt: FieldValue.serverTimestamp(),
       });
 
@@ -45,7 +50,7 @@ export const POST = withRoles(
       transaction.set(auditRef, {
         assignmentId,
         medicineId,
-        medicineName: stockDoc.data()?.name || 'Unknown',
+        medicineName,
         amountDispensed,
         dispensedBy: dispensedBy || 'System',
         timestamp: FieldValue.serverTimestamp(),
@@ -57,7 +62,7 @@ export const POST = withRoles(
         eventLog: FieldValue.arrayUnion({
           timestamp: new Date().toISOString(),
           type: 'DISPENSE',
-          message: `Dispensed ${amountDispensed} units of ${stockDoc.data()?.name || 'Unknown'}`,
+          message: `Dispensed ${amountDispensed} units of ${medicineName}`,
           actor: dispensedBy || 'System'
         })
       });
