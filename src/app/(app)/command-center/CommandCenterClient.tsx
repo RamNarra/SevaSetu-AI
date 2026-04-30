@@ -20,6 +20,7 @@ import { analyzeUrgencyScore, type UrgencyV2Breakdown } from '@/lib/scoring/urge
 import { cn, formatNumber, roleLabel, urgencyColor } from '@/lib/utils';
 import { getCollection, orderBy } from '@/lib/firebase/firestore';
 import { authFetch } from '@/lib/firebase/authFetch';
+import { demoDb } from '@/lib/firebase/demo';
 import VolunteerCoverageMap from '@/components/command-center/VolunteerCoverageMap';
 
 interface SimulationCandidate {
@@ -53,6 +54,15 @@ interface SimulationState {
   candidates: SimulationCandidate[];
 }
 
+interface CommandCenterData {
+  localities: Locality[];
+  reports: (ExtractedSignal & { status?: string })[];
+  volunteers: VolunteerProfile[];
+  camps: CampPlan[];
+  presence: VolunteerPresence[];
+  issues: string[];
+}
+
 const urgencySignalWeights: Record<string, number> = {
   death: 40,
   hospitalization: 26,
@@ -62,27 +72,77 @@ const urgencySignalWeights: Record<string, number> = {
   vulnerable_group: 10,
 };
 
-async function fetchCommandCenterData() {
-  const [localities, reports, volunteers, camps, presence] = await Promise.all([
-    getCollection<Locality>('localities', orderBy('urgencyScore', 'desc')),
-    getCollection<ExtractedSignal & { status?: string }>('extracted_reports'),
-    getCollection<VolunteerProfile>('volunteer_profiles'),
-    getCollection<CampPlan>('camp_plans'),
-    getCollection<VolunteerPresence>('volunteer_presence', orderBy('lastSeenAt', 'desc')),
+function safeArray<T>(value: T[] | undefined | null): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function sortLocalities(localities: Locality[]) {
+  return [...localities].sort((a, b) => (b.urgencyScore ?? 0) - (a.urgencyScore ?? 0));
+}
+
+function sortPresence(presence: VolunteerPresence[]) {
+  return [...presence].sort((left, right) => toMillis(right.lastSeenAt) - toMillis(left.lastSeenAt));
+}
+
+async function loadCollectionWithFallback<T>(
+  collectionName: string,
+  label: string,
+  constraints: Parameters<typeof getCollection>[1][] = []
+): Promise<{ data: T[]; issue: string | null }> {
+  try {
+    const liveData = await getCollection<T>(collectionName, ...constraints);
+    return { data: safeArray(liveData), issue: null };
+  } catch (error) {
+    console.error(`Command Center collection load failed for ${collectionName}:`, error);
+    const fallbackData = safeArray(demoDb.getCollection<T>(collectionName));
+    const issue = fallbackData.length > 0
+      ? `${label} is using demo fallback data.`
+      : `${label} is unavailable right now.`;
+
+    return { data: fallbackData, issue };
+  }
+}
+
+async function fetchCommandCenterData(): Promise<CommandCenterData> {
+  const [localitiesResult, reportsResult, volunteersResult, campsResult, presenceResult] = await Promise.all([
+    loadCollectionWithFallback<Locality>('localities', 'Locality telemetry', [orderBy('urgencyScore', 'desc')]),
+    loadCollectionWithFallback<ExtractedSignal & { status?: string }>('extracted_reports', 'Extracted reports'),
+    loadCollectionWithFallback<VolunteerProfile>('volunteer_profiles', 'Volunteer roster'),
+    loadCollectionWithFallback<CampPlan>('camp_plans', 'Camp plans'),
+    loadCollectionWithFallback<VolunteerPresence>('volunteer_presence', 'Volunteer presence', [orderBy('lastSeenAt', 'desc')]),
   ]);
 
+  const reports = safeArray(reportsResult.data).filter((report) => {
+    if (!report || typeof report !== 'object') {
+      return false;
+    }
+
+    const status = report.status;
+    return !status || status === 'APPROVED' || status === 'EXTRACTED' || status === 'HUMAN_APPROVED';
+  });
+
   return {
-    localities: [...localities].sort((a, b) => b.urgencyScore - a.urgencyScore),
-    // Include APPROVED (production-promoted) AND seeded/EXTRACTED entries
-    // that lack an explicit status. This keeps the demo populated while still
-    // hiding HUMAN_REJECTED / FAILED ones.
-    reports: reports.filter(r => {
-      const s = r.status;
-      return !s || s === 'APPROVED' || s === 'EXTRACTED' || s === 'HUMAN_APPROVED';
-    }),
-    volunteers,
-    camps,
-    presence,
+    localities: sortLocalities(localitiesResult.data).filter((locality) => (
+      !!locality?.name &&
+      Number.isFinite(locality?.coordinates?.lat) &&
+      Number.isFinite(locality?.coordinates?.lng)
+    )),
+    reports,
+    volunteers: safeArray(volunteersResult.data).filter((volunteer) => !!volunteer?.displayName),
+    camps: safeArray(campsResult.data).filter((camp) => !!camp?.status),
+    presence: sortPresence(
+      safeArray(presenceResult.data).filter((entry) => (
+        !!entry?.uid &&
+        Number.isFinite(entry?.batteryLevel)
+      ))
+    ),
+    issues: [
+      localitiesResult.issue,
+      reportsResult.issue,
+      volunteersResult.issue,
+      campsResult.issue,
+      presenceResult.issue,
+    ].filter((issue): issue is string => Boolean(issue)),
   };
 }
 
@@ -126,11 +186,14 @@ function resolveLocalityReports(locality: Locality, reports: ExtractedSignal[]) 
 }
 
 function rankReportForSimulation(report: ExtractedSignal) {
-  const urgencyWeight = report.urgencySignals.reduce((sum, signal) => {
+  const urgencySignals = safeArray(report.urgencySignals);
+  const needs = safeArray(report.needs);
+
+  const urgencyWeight = urgencySignals.reduce((sum, signal) => {
     return sum + (urgencySignalWeights[signal.type] ?? 8) * (signal.confidence ?? 0.5);
   }, 0);
 
-  const needWeight = report.needs.reduce((sum, need) => {
+  const needWeight = needs.reduce((sum, need) => {
     const impact = clamp(need.affectedEstimate / 30, 1, 8);
     return sum + need.severity * impact * (need.confidence ?? 0.5);
   }, 0);
@@ -145,15 +208,18 @@ function rankReportForSimulation(report: ExtractedSignal) {
 
 function resolvePrimarySignal(report: ExtractedSignal | undefined) {
   if (!report) return null;
-  if (report.urgencySignals.length > 0) {
-    const topUrgencySignal = [...report.urgencySignals].sort(
+  const urgencySignals = safeArray(report.urgencySignals);
+  const needs = safeArray(report.needs);
+
+  if (urgencySignals.length > 0) {
+    const topUrgencySignal = [...urgencySignals].sort(
       (left, right) => (right.confidence ?? 0.5) - (left.confidence ?? 0.5)
     )[0];
     return titleize(topUrgencySignal.type);
   }
 
-  if (report.needs.length > 0) {
-    return report.needs[0].label;
+  if (needs.length > 0) {
+    return needs[0].label;
   }
 
   return 'General Field Need';
@@ -345,6 +411,7 @@ export default function CommandCenterClient() {
   const [presence, setPresence] = useState<VolunteerPresence[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadIssues, setLoadIssues] = useState<string[]>([]);
   const [simulation, setSimulation] = useState<SimulationState | null>(null);
   const [simulatingLocalityId, setSimulatingLocalityId] = useState<string | null>(null);
 
@@ -360,6 +427,23 @@ export default function CommandCenterClient() {
         setVolunteers(data.volunteers);
         setCamps(data.camps);
         setPresence(data.presence);
+        setLoadIssues(data.issues);
+        if (data.issues.length > 0) {
+          toast(() => (
+            <div className="max-w-sm text-sm">
+              <p className="font-semibold text-white">Command Center recovered with fallback data</p>
+              <p className="mt-1 text-zinc-200">{data.issues[0]}</p>
+            </div>
+          ), {
+            id: 'command-center-fallback',
+            duration: 5000,
+            style: {
+              background: '#111827',
+              color: '#fff',
+              border: '1px solid rgba(255,255,255,0.12)',
+            },
+          });
+        }
       } catch (error) {
         console.error('Command Center load error:', error);
         if (!cancelled) {
@@ -388,7 +472,12 @@ export default function CommandCenterClient() {
       setVolunteers(data.volunteers);
       setCamps(data.camps);
       setPresence(data.presence);
-      toast.success('Operational telemetry refreshed.');
+      setLoadIssues(data.issues);
+      if (data.issues.length > 0) {
+        toast.success(`Telemetry refreshed with fallback for ${data.issues.length} source${data.issues.length === 1 ? '' : 's'}.`);
+      } else {
+        toast.success('Operational telemetry refreshed.');
+      }
     } catch (error) {
       console.error('Command Center refresh error:', error);
       toast.error('Refresh failed. Using the last successful snapshot.');
@@ -604,6 +693,11 @@ export default function CommandCenterClient() {
 
             <div className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_380px]">
               <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5 md:p-6">
+                {loadIssues.length > 0 && (
+                  <div className="mb-6 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
+                    {loadIssues[0]}
+                  </div>
+                )}
                 <div className="mb-6 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
                   <div>
                     <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">Urgency Feed</p>
