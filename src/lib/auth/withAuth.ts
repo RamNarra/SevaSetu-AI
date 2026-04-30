@@ -24,6 +24,9 @@ export interface AuthContext {
 }
 
 const DEV_BYPASS = process.env.AUTH_DEV_BYPASS === 'true';
+const ADMIN_EMAILS = new Set<string>([
+  'ramcharannarra8@gmail.com',
+]);
 
 export async function verifyRequest(req: NextRequest): Promise<AuthContext | null> {
   const header = req.headers.get('authorization') ?? req.headers.get('Authorization');
@@ -48,6 +51,9 @@ export async function verifyRequest(req: NextRequest): Promise<AuthContext | nul
       }
     } catch {
       role = null;
+    }
+    if (!role && decoded.email && ADMIN_EMAILS.has(decoded.email.toLowerCase())) {
+      role = UserRole.COORDINATOR;
     }
     return { uid: decoded.uid, email: decoded.email, role, bypass: false };
   } catch (err) {
