@@ -94,12 +94,12 @@ export default function VolunteerCoverageMap({
           center: { lat: 22.5, lng: 79 },
           zoom: 5,
           mapId: 'DEMO_MAP_ID',
+          mapTypeId: 'hybrid',
           disableDefaultUI: false,
           zoomControl: true,
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: true,
-          colorScheme: 'DARK',
         });
         setMapError(null);
       } catch (error) {
