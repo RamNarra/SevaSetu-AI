@@ -10,8 +10,22 @@ import {
   seedPatientVisits,
   seedMedicineStock,
   seedVolunteerPresence,
+  seedAssignments,
 } from '@/data/seed';
 import { Locality, VolunteerProfile, RawReport, ExtractedSignal, CampPlan, PatientVisit, MedicineStock, VolunteerPresence } from '@/types';
+
+interface AssignmentRecord {
+  id: string;
+  volunteerId: string;
+  campId: string;
+  role: string;
+  volunteerName: string;
+  matchScore: number;
+  matchReasoning: string;
+  confirmed: boolean;
+  assignedAt: { seconds: number; nanoseconds: number };
+  eventLog?: { timestamp: string; type: string; message: string; actor: string }[];
+}
 
 type DemoCollectionKey =
   | 'localities'
@@ -21,7 +35,8 @@ type DemoCollectionKey =
   | 'camps'
   | 'visits'
   | 'medicines'
-  | 'volunteerPresence';
+  | 'volunteerPresence'
+  | 'assignments';
 
 type DemoIdentifiable = {
   id?: string;
@@ -37,6 +52,7 @@ const firestoreToDemoCollection: Record<string, DemoCollectionKey> = {
   patient_visits: 'visits',
   medicine_stock: 'medicines',
   volunteer_presence: 'volunteerPresence',
+  assignments: 'assignments',
 };
 
 /**
@@ -66,6 +82,7 @@ class DemoDatabase {
   visits: PatientVisit[] = seedPatientVisits as PatientVisit[];
   medicines: MedicineStock[] = seedMedicineStock as MedicineStock[];
   volunteerPresence: VolunteerPresence[] = seedVolunteerPresence as VolunteerPresence[];
+  assignments: AssignmentRecord[] = seedAssignments as unknown as AssignmentRecord[];
 
   private resolveCollectionKey(collectionName: string): DemoCollectionKey | null {
     return firestoreToDemoCollection[collectionName] ?? null;

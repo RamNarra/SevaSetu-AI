@@ -22,10 +22,7 @@ export const extractRequestSchema = z.object({
     )
     .optional()
     .default([]),
-}).refine(
-  (data) => (data.text && data.text.length > 0) || (data.attachments && data.attachments.length > 0),
-  { message: 'Either text or attachments must be provided' }
-);
+});
 
 export type ExtractRequest = z.infer<typeof extractRequestSchema>;
 

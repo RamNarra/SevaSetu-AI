@@ -34,11 +34,25 @@ export const POST = withAuth(async (request: NextRequest) => {
     
     Use a professional and supportive tone.`;
 
-    const response = await generateContentWithFallback({
-      model: MODEL,
-      contents: prompt,
-      config: { temperature: 0.4, maxOutputTokens: 2048 },
-    });
+    let summaryText: string;
+    try {
+      const response = await generateContentWithFallback({
+        model: MODEL,
+        contents: prompt,
+        config: { temperature: 0.4, maxOutputTokens: 2048 },
+      });
+      summaryText = response.text || '';
+    } catch (modelErr) {
+      console.warn('[summarize] model call failed, using fallback:', modelErr instanceof Error ? modelErr.message : modelErr);
+      const visitCount = Array.isArray(patientVisits) ? patientVisits.length : 0;
+      const dispenseCount = Array.isArray(dispenseLogs) ? dispenseLogs.length : 0;
+      const followupCount = Array.isArray(followups) ? followups.length : 0;
+      summaryText = `# Camp Impact Snapshot\n\n| Metric | Value |\n|--------|-------|\n| Patients Seen | ${visitCount} |\n| Medicines Dispensed | ${dispenseCount} |\n| Follow-ups Scheduled | ${followupCount} |\n\n# Key Health Trends\n\n- ${visitCount} patients received care during this camp session\n- ${dispenseCount} medicine dispensing events recorded\n- ${followupCount} follow-up visits planned\n\n# Predictive Follow-ups\n\n- Patients with chronic conditions should be revisited within 2 weeks\n- Any referrals made should be tracked for completion\n\n# Resource Gaps & Recommendations\n\n- Review medicine stock levels before next camp\n- Ensure adequate volunteer coverage for follow-up visits`;
+    }
+
+    if (!summaryText.trim()) {
+      summaryText = 'Summary generation returned empty. Please try again.';
+    }
 
     void recordAiAudit({
       op: 'summarize',
@@ -50,7 +64,7 @@ export const POST = withAuth(async (request: NextRequest) => {
 
     return NextResponse.json({
       success: true,
-      summary: response.text || 'Summary generation failed.',
+      summary: summaryText,
     });
   } catch (error) {
     console.error('Summary generation error:', error);

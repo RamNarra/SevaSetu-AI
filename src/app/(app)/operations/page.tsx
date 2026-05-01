@@ -6,7 +6,7 @@ import {
   Clock, Package, MapPin, Loader2, AlertTriangle, User,
   CheckCircle2, Syringe, Plus, ClipboardList
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { subscribeToCollection, getCollection } from '@/lib/firebase/firestore';
 import { authFetch } from '@/lib/firebase/authFetch';
 import { VolunteerProfile } from '@/types';
@@ -46,6 +46,7 @@ export default function ActiveDeploymentsPage() {
   const [loading, setLoading] = useState(true);
   const [medicines, setMedicines] = useState<MedicineStock[]>([]);
   const [selectedAssignment, setSelectedAssignment] = useState<ActiveAssignment | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
 
   const [dispenseMedicineId, setDispenseMedicineId] = useState('');
   const [dispenseAmount, setDispenseAmount] = useState(1);
@@ -95,18 +96,18 @@ export default function ActiveDeploymentsPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedAssignment) {
+    if (!selectedIdRef.current) {
       return;
     }
 
     const refreshed = assignments
       .map(enrichAssignment)
-      .find((assignment) => assignment.id === selectedAssignment.id);
+      .find((assignment) => assignment.id === selectedIdRef.current);
 
     if (refreshed) {
       setSelectedAssignment(refreshed);
     }
-  }, [assignments, enrichAssignment, selectedAssignment]);
+  }, [assignments, enrichAssignment]);
 
   const handleDispense = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -182,7 +183,10 @@ export default function ActiveDeploymentsPage() {
                             ? 'border-red-500 bg-red-50/50 shadow-[0_0_15px_rgba(239,68,68,0.15)]' 
                             : 'border-[#E5E2DC] bg-[#FAFAFA]'
                         } cursor-pointer hover:border-[#D4622B] transition-all`}
-                        onClick={() => setSelectedAssignment(a)}
+                        onClick={() => {
+                          selectedIdRef.current = a.id;
+                          setSelectedAssignment(a);
+                        }}
                       >
                         {isStuck && (
                           <div className="absolute -top-2 -right-2 bg-red-600 text-white p-1.5 rounded-full animate-pulse shadow-md z-10">

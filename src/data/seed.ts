@@ -390,3 +390,65 @@ export const seedMedicineStock = [
   { campId: 'camp_planned', medicineName: 'Permethrin Cream', category: 'Antiparasitic', quantityAvailable: 30, quantityDispensed: 0, unit: 'tubes', expiryDate: Timestamp.fromDate(new Date('2027-10-01')) },
   { campId: 'camp_planned', medicineName: 'Chloroquine Phosphate', category: 'Antimalarial', quantityAvailable: 80, quantityDispensed: 0, unit: 'tablets', expiryDate: Timestamp.fromDate(new Date('2027-06-01')) },
 ];
+
+// ---- Assignments (Active Deployments) ----
+export const seedAssignments = [
+  {
+    id: 'assign_001',
+    volunteerId: 'vol_001',
+    campId: 'camp_planned',
+    role: 'Doctor',
+    volunteerName: 'Dr. Priya Sharma',
+    matchScore: 95,
+    matchReasoning: 'Pediatrics expertise aligns with reported child health issues',
+    confirmed: true,
+    assignedAt: Timestamp.fromDate(new Date(Date.now() - 2 * 60 * 60 * 1000)), // 2 hours ago
+    eventLog: [
+      { timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), type: 'DEPLOYED', message: 'Arrived at camp site', actor: 'Dr. Priya Sharma' },
+      { timestamp: new Date(Date.now() - 1.5 * 60 * 60 * 1000).toISOString(), type: 'TRIAGE_START', message: 'Started patient triage', actor: 'Dr. Priya Sharma' },
+    ],
+  },
+  {
+    id: 'assign_002',
+    volunteerId: 'vol_005',
+    campId: 'camp_planned',
+    role: 'Pharmacist',
+    volunteerName: 'Pharm. Deepa Reddy',
+    matchScore: 88,
+    matchReasoning: 'Dispensing experience, local language match',
+    confirmed: true,
+    assignedAt: Timestamp.fromDate(new Date(Date.now() - 1.5 * 60 * 60 * 1000)), // 1.5 hours ago
+    eventLog: [
+      { timestamp: new Date(Date.now() - 1.5 * 60 * 60 * 1000).toISOString(), type: 'DEPLOYED', message: 'Pharmacy station set up', actor: 'Pharm. Deepa Reddy' },
+    ],
+  },
+  {
+    id: 'assign_003',
+    volunteerId: 'vol_007',
+    campId: 'camp_planned',
+    role: 'Field Volunteer',
+    volunteerName: 'Meera Devi',
+    matchScore: 92,
+    matchReasoning: 'ASHA training, speaks local dialect, strong community engagement',
+    confirmed: true,
+    assignedAt: Timestamp.fromDate(new Date(Date.now() - 5 * 60 * 60 * 1000)), // 5 hours ago — will show as "stuck"
+    eventLog: [
+      { timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(), type: 'DEPLOYED', message: 'Door-to-door survey started', actor: 'Meera Devi' },
+      { timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), type: 'UPDATE', message: 'Covered 40 households, 12 flagged for camp visit', actor: 'Meera Devi' },
+    ],
+  },
+  {
+    id: 'assign_004',
+    volunteerId: 'vol_009',
+    campId: 'camp_planned',
+    role: 'Support',
+    volunteerName: 'Fatima Sheikh',
+    matchScore: 85,
+    matchReasoning: 'Registration and crowd management experience',
+    confirmed: true,
+    assignedAt: Timestamp.fromDate(new Date(Date.now() - 1 * 60 * 60 * 1000)), // 1 hour ago
+    eventLog: [
+      { timestamp: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(), type: 'DEPLOYED', message: 'Registration desk active', actor: 'Fatima Sheikh' },
+    ],
+  },
+];
