@@ -93,22 +93,13 @@ export default function VolunteerCoverageMap({
         mapRef.current = new Map(mapNodeRef.current, {
           center: { lat: 22.5, lng: 79 },
           zoom: 5,
+          mapId: 'DEMO_MAP_ID',
           disableDefaultUI: false,
           zoomControl: true,
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: true,
-          styles: [
-            { elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
-            { elementType: 'labels.text.stroke', stylers: [{ color: '#020617' }] },
-            { elementType: 'labels.text.fill', stylers: [{ color: '#cbd5e1' }] },
-            { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1e293b' }] },
-            { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#94a3b8' }] },
-            { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#082f49' }] },
-            { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-            { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-            { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#334155' }] },
-          ],
+          colorScheme: 'DARK',
         });
         setMapError(null);
       } catch (error) {
@@ -293,7 +284,7 @@ export default function VolunteerCoverageMap({
       </div>
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_300px]">
-        <div className="overflow-hidden rounded-[24px] border border-white/10 bg-slate-950/90">
+        <div className="overflow-hidden rounded-[24px] border border-white/10 bg-slate-950/90 flex flex-col">
           {mapError ? (
             <div className="relative h-[420px] w-full overflow-hidden">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(52,211,153,0.16),transparent_32%),radial-gradient(circle_at_top_right,rgba(251,191,36,0.14),transparent_24%),linear-gradient(180deg,#020617_0%,#0f172a_100%)]" />
@@ -364,7 +355,7 @@ export default function VolunteerCoverageMap({
           ) : (
             <div
               ref={mapNodeRef}
-              className="h-[420px] w-full"
+              className="flex-1 min-h-[420px] w-full"
               aria-label="Volunteer coverage map"
             />
           )}

@@ -16,59 +16,87 @@ import toast from 'react-hot-toast';
  * Handles headers, bold, lists, tables, and horizontal rules.
  */
 function markdownToHtml(md: string): string {
+  // Escape HTML first, then convert markdown
   let html = md
-    // Escape HTML
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    // Headers
+    // Headers (must be before bold/italic)
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h2>$1</h2>')
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
     // Horizontal rules
     .replace(/^---$/gm, '<hr />')
     // Bold
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // Italic
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Unordered lists
-    .replace(/^\* (.+)$/gm, '<li>$1</li>')
+    .replace(/\*\*([\s\S]+?)\*\*/g, '<strong>$1</strong>')
+    // Italic (only after bold to avoid conflict)
+    .replace(/\*([^*\n]+?)\*/g, '<em>$1</em>')
+    // Unordered list items (- or *)
+    .replace(/^[-*] (.+)$/gm, '<li data-ul>$1</li>')
+    // Ordered list items (1. 2. etc)
+    .replace(/^\d+\. (.+)$/gm, '<li data-ol>$1</li>')
     // Inline code
     .replace(/`([^`]+)`/g, '<code>$1</code>');
 
-  // Wrap consecutive <li> in <ul>
-  html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
+  // Wrap consecutive <li data-ul> in <ul>
+  html = html.replace(/((?:<li data-ul>[\s\S]*?<\/li>\n?)+)/g, (m) =>
+    '<ul>' + m.replace(/ data-ul/g, '') + '</ul>'
+  );
+  // Wrap consecutive <li data-ol> in <ol>
+  html = html.replace(/((?:<li data-ol>[\s\S]*?<\/li>\n?)+)/g, (m) =>
+    '<ol>' + m.replace(/ data-ol/g, '') + '</ol>'
+  );
 
-  // Tables: detect lines with | and convert
+  // Tables: process line by line
   const lines = html.split('\n');
   const result: string[] = [];
   let inTable = false;
+  let tableFirstRow = true;
   for (const line of lines) {
-    if (line.includes('|') && line.trim().startsWith('|')) {
-      // Skip separator lines like | :--- | :--- |
-      if (/^\|[\s:?-]+\|/.test(line.trim()) && !line.includes('<')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('|') && trimmed.includes('|')) {
+      // Skip markdown separator rows like |---|---|
+      if (/^\|[-:\s|]+\|$/.test(trimmed)) {
         continue;
       }
-      const cells = line.split('|').filter((c) => c.trim() !== '');
+      const cells = trimmed.split('|').slice(1, -1).map((c) => c.trim());
       if (!inTable) {
         result.push('<table>');
-        result.push('<tr>' + cells.map((c) => `<th>${c.trim()}</th>`).join('') + '</tr>');
+        result.push('<thead><tr>' + cells.map((c) => `<th>${c}</th>`).join('') + '</tr></thead><tbody>');
         inTable = true;
+        tableFirstRow = false;
+        continue;
+      }
+      if (tableFirstRow) {
+        result.push('<thead><tr>' + cells.map((c) => `<th>${c}</th>`).join('') + '</tr></thead><tbody>');
+        tableFirstRow = false;
       } else {
-        result.push('<tr>' + cells.map((c) => `<td>${c.trim()}</td>`).join('') + '</tr>');
+        result.push('<tr>' + cells.map((c) => `<td>${c}</td>`).join('') + '</tr>');
       }
     } else {
       if (inTable) {
-        result.push('</table>');
+        result.push('</tbody></table>');
         inTable = false;
+        tableFirstRow = true;
       }
       result.push(line);
     }
   }
-  if (inTable) result.push('</table>');
+  if (inTable) result.push('</tbody></table>');
 
-  // Wrap remaining plain text lines in <p>
-  return result.join('\n')
-    .replace(/\n{2,}/g, '</p><p>')
-    .replace(/^(?!<[huptlo])/gm, (m) => m ? `<p>${m}` : m);
+  // Convert double newlines to paragraph breaks, but skip block elements
+  const blockTags = /^<(h[1-6]|ul|ol|li|table|thead|tbody|tr|th|td|hr|blockquote)/;
+  const assembled = result.join('\n');
+  const paragraphed = assembled
+    .split(/\n{2,}/)
+    .map((chunk) => {
+      const t = chunk.trim();
+      if (!t) return '';
+      if (blockTags.test(t)) return t;
+      return `<p>${t.replace(/\n/g, '<br />')}</p>`;
+    })
+    .filter(Boolean)
+    .join('\n');
+
+  return paragraphed;
 }
 
 export default function ImpactPage() {
