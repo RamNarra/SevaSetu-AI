@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Radio } from 'lucide-react';
 import { Locality, VolunteerPresence, VolunteerProfile } from '@/types';
 import { formatNumber, urgencyColor } from '@/lib/utils';
-import { loadMapsLibrary, loadMarkerLibrary, loadVisualizationLibrary } from '@/lib/maps/config';
+import { loadMapsLibrary, loadMarkerLibrary } from '@/lib/maps/config';
 
 interface VolunteerCoverageMapProps {
   localities: Locality[];
@@ -58,7 +58,7 @@ export default function VolunteerCoverageMap({
   const mapRef = useRef<google.maps.Map | null>(null);
   const localityMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   const volunteerMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
-  const heatmapRef = useRef<google.maps.visualization.HeatmapLayer | null>(null);
+  const urgencyCirclesRef = useRef<google.maps.Circle[]>([]);
   const [mapError, setMapError] = useState<string | null>(null);
 
   const trackedPresence = useMemo(
@@ -127,7 +127,6 @@ export default function VolunteerCoverageMap({
 
       try {
         const { AdvancedMarkerElement } = await loadMarkerLibrary();
-        const { HeatmapLayer } = await loadVisualizationLibrary();
         if (cancelled || !mapRef.current) {
           return;
         }
@@ -138,12 +137,45 @@ export default function VolunteerCoverageMap({
         volunteerMarkersRef.current.forEach((marker) => {
           marker.map = null;
         });
+        urgencyCirclesRef.current.forEach((circle) => {
+          circle.setMap(null);
+        });
         localityMarkersRef.current = [];
         volunteerMarkersRef.current = [];
+        urgencyCirclesRef.current = [];
 
         const map = mapRef.current;
         const bounds = new google.maps.LatLngBounds();
 
+        // Draw urgency hotzone circles — one per locality.
+        // google.maps.Circle works on vector maps (mapId set); HeatmapLayer does not.
+        localities.forEach((locality) => {
+          if (!Number.isFinite(locality.coordinates?.lat) || !Number.isFinite(locality.coordinates?.lng)) {
+            return;
+          }
+
+          const score = Math.min(Math.max(locality.urgencyScore ?? 0, 0), 100);
+          // Radius scales with urgency: 20 → ~30km, 80+ → ~90km
+          const radiusM = 30000 + score * 700;
+          const fillColor = urgencyColor(locality.urgencyLevel);
+
+          const circle = new google.maps.Circle({
+            map,
+            center: locality.coordinates,
+            radius: radiusM,
+            fillColor,
+            fillOpacity: 0.22 + (score / 100) * 0.28,
+            strokeColor: fillColor,
+            strokeOpacity: 0.6,
+            strokeWeight: 1.5,
+            clickable: false,
+          });
+
+          urgencyCirclesRef.current.push(circle);
+          bounds.extend(locality.coordinates);
+        });
+
+        // Locality pin markers on top of the circles
         localities.forEach((locality) => {
           if (!Number.isFinite(locality.coordinates?.lat) || !Number.isFinite(locality.coordinates?.lng)) {
             return;
@@ -151,7 +183,6 @@ export default function VolunteerCoverageMap({
 
           const pin = document.createElement('div');
           const accent = urgencyColor(locality.urgencyLevel);
-
           pin.innerHTML = `
             <div style="
               width: 18px;
@@ -159,7 +190,7 @@ export default function VolunteerCoverageMap({
               border-radius: 999px;
               border: 2px solid rgba(255,255,255,0.85);
               background: ${accent};
-              box-shadow: 0 0 16px ${accent}55;
+              box-shadow: 0 0 16px ${accent}88;
             "></div>
           `;
 
@@ -171,7 +202,6 @@ export default function VolunteerCoverageMap({
           });
 
           localityMarkersRef.current.push(marker);
-          bounds.extend(locality.coordinates);
         });
 
         trackedPresence.forEach((entry) => {
@@ -208,29 +238,6 @@ export default function VolunteerCoverageMap({
 
           volunteerMarkersRef.current.push(marker);
           bounds.extend({ lat: entry.lat, lng: entry.lng });
-        });
-
-        const heatmapData = localities.map((locality) => ({
-          location: new google.maps.LatLng(locality.coordinates.lat, locality.coordinates.lng),
-          weight: locality.urgencyScore,
-        }));
-
-        if (heatmapRef.current) {
-          heatmapRef.current.setMap(null);
-        }
-
-        heatmapRef.current = new HeatmapLayer({
-          data: heatmapData,
-          map,
-          radius: 60,
-          opacity: 0.75,
-          gradient: [
-            'rgba(0,0,0,0)',
-            '#34d399',
-            '#fbbf24',
-            '#f97316',
-            '#ef4444',
-          ],
         });
 
         if (!bounds.isEmpty()) {
