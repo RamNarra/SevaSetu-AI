@@ -18,21 +18,32 @@ export const POST = withAuth(async (request: NextRequest) => {
     const { campTitle, patientVisits, dispenseLogs, followups } = parsed.data;
 
     const prompt = `You are an impact analyst AI for SevaSetu AI.
-    
-    Generate a comprehensive camp summary for "${campTitle}".
-    
-    Data:
-    - Patient visit records: ${JSON.stringify(patientVisits)}
-    - Medicine logs: ${JSON.stringify(dispenseLogs)}
-    - Explicit follow-ups: ${JSON.stringify(followups)}
-    
-    Structure the markdown summary as follows:
-    1. # Camp Impact Snapshot (Stats table)
-    2. # Key Health Trends (Bullet points)
-    3. # Predictive Follow-ups (CRITICAL: Analyze patient data and predict who else needs follow-up, not just those already marked)
-    4. # Resource Gaps & Recommendations (Next-step actions for the coordinator)
-    
-    Use a professional and supportive tone.`;
+
+Generate a comprehensive camp summary for "${campTitle}".
+
+Data:
+- Patient visit records: ${JSON.stringify(patientVisits)}
+- Medicine logs: ${JSON.stringify(dispenseLogs)}
+- Explicit follow-ups: ${JSON.stringify(followups)}
+
+CRITICAL: Start your response DIRECTLY with "# Camp Impact Snapshot". Do NOT write any introduction, preamble, or "As an AI..." opener. Output ONLY the markdown structure below — nothing before the first heading.
+
+Structure:
+1. # Camp Impact Snapshot
+| Metric | Value |
+|--------|-------|
+(table with: Total Patients, Consultations Completed, Referrals Made, Follow-ups Needed, Medicines Dispensed)
+
+2. ## Key Health Trends
+(bullet points from the patient data)
+
+3. ## Predictive Follow-ups
+(CRITICAL: Analyze patient data and predict who else needs follow-up, not just those already marked)
+
+4. ## Resource Gaps & Recommendations
+(Next-step actions for the coordinator)
+
+Use a professional and supportive tone.`;
 
     let summaryText: string;
     try {
@@ -42,6 +53,9 @@ export const POST = withAuth(async (request: NextRequest) => {
         config: { temperature: 0.4, maxOutputTokens: 2048 },
       });
       summaryText = response.text || '';
+      // Strip any preamble before the first markdown heading
+      const firstHash = summaryText.indexOf('#');
+      if (firstHash > 0) summaryText = summaryText.slice(firstHash);
     } catch (modelErr) {
       console.warn('[summarize] model call failed, using fallback:', modelErr instanceof Error ? modelErr.message : modelErr);
       const visitCount = Array.isArray(patientVisits) ? patientVisits.length : 0;

@@ -68,17 +68,29 @@ export async function semanticRankVolunteers(
   const reportVector = await embedText(reportText);
   const mode: 'vector' | 'lexical' = reportVector ? 'vector' : 'lexical';
 
+  const vols = kept as VolunteerWithEmbedding[];
+
+  // Pre-fetch all missing volunteer embeddings in parallel before scoring.
+  // Sequential embedText calls cost ~200ms each × N volunteers; batching cuts
+  // this to a single round-trip wall-clock time regardless of pool size.
+  if (reportVector) {
+    await Promise.all(
+      vols.map(async (v) => {
+        if (!v.embedding) {
+          v.embedding = (await embedText(v.embeddingText ?? volunteerSummaryString(v))) ?? undefined;
+        }
+      })
+    );
+  }
+
   // 3. Soft score each remaining candidate
   const scored: SemanticMatch[] = [];
-  for (const v of kept as VolunteerWithEmbedding[]) {
+  for (const v of vols) {
     const summary = v.embeddingText ?? volunteerSummaryString(v);
 
     let semanticScore = 0;
     if (reportVector) {
-      let vec = v.embedding;
-      if (!vec) {
-        vec = (await embedText(summary)) ?? undefined;
-      }
+      const vec = v.embedding;
       if (vec && vec.length === reportVector.length) {
         semanticScore = Math.max(0, cosineSimilarity(reportVector, vec));
       } else {

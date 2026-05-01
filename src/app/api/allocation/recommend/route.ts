@@ -143,11 +143,16 @@ Return ONLY a JSON array:
 [{ "id": "string", "adjustedScore": number (0-100), "explanation": "string" }]`;
 
         const llmStart = Date.now();
-        const aiRes = await generateContentWithFallback({
+        const llmCall = generateContentWithFallback({
           model: MODELS.routing,
           contents: prompt,
-          config: { temperature: 0.2, responseMimeType: 'application/json', maxOutputTokens: 1024 },
+          config: { temperature: 0.2, responseMimeType: 'application/json', maxOutputTokens: 512 },
         });
+        // Cap the rerank at 2.5 s — deterministic results are already good enough
+        const timeoutGuard = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('rerank timeout')), 2500)
+        );
+        const aiRes = await Promise.race([llmCall, timeoutGuard]) as Awaited<typeof llmCall>;
         llmAdjustments = parseJsonResponse(aiRes.text || '[]') as typeof llmAdjustments;
 
         void recordAiAudit({

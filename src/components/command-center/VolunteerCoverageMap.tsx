@@ -222,14 +222,14 @@ export default function VolunteerCoverageMap({
         heatmapRef.current = new HeatmapLayer({
           data: heatmapData,
           map,
-          radius: 36,
-          opacity: 0.55,
+          radius: 60,
+          opacity: 0.75,
           gradient: [
             'rgba(0,0,0,0)',
-            'rgba(52, 211, 153, 0.28)',
-            'rgba(251, 191, 36, 0.32)',
-            'rgba(251, 146, 60, 0.36)',
-            'rgba(251, 113, 133, 0.4)',
+            '#34d399',
+            '#fbbf24',
+            '#f97316',
+            '#ef4444',
           ],
         });
 

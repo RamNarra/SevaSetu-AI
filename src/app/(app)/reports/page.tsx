@@ -255,11 +255,26 @@ export default function ReportsPage() {
                   </p>
                   <div className="p-3 rounded-lg bg-[#FAF9F6] border border-[#E5E2DC]">
                     {Array.isArray(value) ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {(value as unknown[]).map((v, i) => (
-                          <span key={i} className="badge bg-primary-pale text-[#D4622B] border-[#D4622B]/20">
-                            {typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)}
-                          </span>
+                      <div className="space-y-2">
+                        {(value as unknown[]).map((item, i) => (
+                          typeof item === 'object' && item !== null ? (
+                            <div key={i} className="rounded-lg bg-white border border-[#E5E2DC] p-2.5 space-y-1">
+                              {Object.entries(item as Record<string, unknown>)
+                                .filter(([k]) => !['taxonomyCode', 'geohash'].includes(k))
+                                .map(([k, v]) => (
+                                  <div key={k} className="flex gap-2 items-start text-xs">
+                                    <span className="text-[#6B7280] min-w-[80px] shrink-0 capitalize">{k.replace(/([A-Z])/g, ' $1').toLowerCase()}:</span>
+                                    <span className={`break-words font-medium ${k === 'label' ? 'text-[#D4622B]' : k === 'evidenceSpan' ? 'italic text-[#6B7280] font-normal' : 'text-[#1A1A1A]'}`}>
+                                      {Array.isArray(v) ? v.join(', ') : String(v ?? '—')}
+                                    </span>
+                                  </div>
+                                ))}
+                            </div>
+                          ) : (
+                            <span key={i} className="badge bg-primary-pale text-[#D4622B] border-[#D4622B]/20">
+                              {String(item)}
+                            </span>
+                          )
                         ))}
                       </div>
                     ) : typeof value === 'number' ? (
