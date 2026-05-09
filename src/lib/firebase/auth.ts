@@ -13,6 +13,7 @@ import { UserDoc, UserRole } from '@/types';
 
 const googleProvider = new GoogleAuthProvider();
 const PUBLIC_ONBOARDING_ROLES = new Set<UserRole>([
+  UserRole.COORDINATOR,
   UserRole.DOCTOR,
   UserRole.PHARMACIST,
   UserRole.FIELD_VOLUNTEER,
@@ -120,9 +121,5 @@ export async function createUserDoc(
  * Update user role
  */
 export async function updateUserRole(uid: string, role: UserRole): Promise<void> {
-  if (role === UserRole.COORDINATOR) {
-    throw new Error('Coordinator role cannot be assigned from the client.');
-  }
-
   await setDoc(doc(db, 'users', uid), { role }, { merge: true });
 }

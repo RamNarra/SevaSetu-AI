@@ -29,6 +29,8 @@ interface AuthContextType {
   role: UserRole | null;
   loading: boolean;
   needsOnboarding: boolean;
+  /** Call after onboarding write succeeds to update context without waiting for onAuthChange. */
+  completeOnboarding: (doc: UserDoc) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -37,6 +39,7 @@ const AuthContext = createContext<AuthContextType>({
   role: null,
   loading: true,
   needsOnboarding: false,
+  completeOnboarding: () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -44,41 +47,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userDoc, setUserDoc] = useState<UserDoc | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  // Guards against onAuthChange re-firing and overwriting state after completeOnboarding
+  const onboardedRef = React.useRef(false);
 
   useEffect(() => {
     const unsubscribe = onAuthChange(async (firebaseUser) => {
       setUser(firebaseUser);
 
-      if (firebaseUser) {
-        const isAdmin = !!firebaseUser.email && ADMIN_EMAILS.has(firebaseUser.email.toLowerCase());
-        try {
-          const doc = await getUserDoc(firebaseUser.uid);
-          if (doc) {
-            // Force admin emails to coordinator role regardless of stored value
-            setUserDoc(isAdmin ? { ...doc, role: UserRole.COORDINATOR } : doc);
-            setNeedsOnboarding(false);
-          } else if (isAdmin) {
-            // No Firestore doc yet — synthesize a coordinator doc so the demo never blocks.
-            setUserDoc(buildAdminUserDoc(firebaseUser));
-            setNeedsOnboarding(false);
-          } else {
-            setNeedsOnboarding(true);
-            setUserDoc(null);
-          }
-        } catch (err) {
-          console.error('Failed to fetch user doc:', err);
-          if (isAdmin) {
-            setUserDoc(buildAdminUserDoc(firebaseUser));
-            setNeedsOnboarding(false);
-          } else {
-            // Auth succeeded but Firestore failed — still let them through to onboarding
-            setNeedsOnboarding(true);
-            setUserDoc(null);
-          }
-        }
-      } else {
+      if (!firebaseUser) {
         setUserDoc(null);
         setNeedsOnboarding(false);
+        onboardedRef.current = false;
+        setLoading(false);
+        return;
+      }
+
+      // If completeOnboarding already set the doc, skip re-fetch
+      if (onboardedRef.current) {
+        setLoading(false);
+        return;
+      }
+
+      const isAdmin = !!firebaseUser.email && ADMIN_EMAILS.has(firebaseUser.email.toLowerCase());
+      try {
+        const doc = await getUserDoc(firebaseUser.uid);
+        if (doc) {
+          // Respect the stored role — admin emails no longer force-override
+          setUserDoc(doc);
+          setNeedsOnboarding(false);
+        } else if (isAdmin) {
+          // No Firestore doc yet — synthesize a coordinator doc so the demo never blocks.
+          setUserDoc(buildAdminUserDoc(firebaseUser));
+          setNeedsOnboarding(false);
+        } else {
+          setNeedsOnboarding(true);
+          setUserDoc(null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch user doc:', err);
+        if (isAdmin) {
+          setUserDoc(buildAdminUserDoc(firebaseUser));
+          setNeedsOnboarding(false);
+        } else {
+          // Auth succeeded but Firestore failed — still let them through to onboarding
+          setNeedsOnboarding(true);
+          setUserDoc(null);
+        }
       }
 
       setLoading(false);
@@ -86,6 +100,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return unsubscribe;
   }, []);
+
+  function completeOnboarding(doc: UserDoc) {
+    onboardedRef.current = true;
+    setUserDoc(doc);
+    setNeedsOnboarding(false);
+  }
 
   return (
     <AuthContext.Provider
@@ -95,6 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: userDoc?.role || null,
         loading,
         needsOnboarding,
+        completeOnboarding,
       }}
     >
       {children}

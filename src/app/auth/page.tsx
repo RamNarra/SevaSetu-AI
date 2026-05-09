@@ -11,6 +11,12 @@ import toast from 'react-hot-toast';
 
 const roles = [
   {
+    value: UserRole.COORDINATOR,
+    label: 'Coordinator',
+    description: 'Full command center access — AI workbench, allocation, camp planning, and admin',
+    emoji: '🛡️',
+  },
+  {
     value: UserRole.DOCTOR,
     label: 'Doctor / Consultant',
     description: 'Consultation workflow, patient visits, and prescription management',
@@ -49,7 +55,7 @@ export default function AuthPage() {
 }
 
 function AuthContent() {
-  const { user, userDoc, loading, needsOnboarding } = useAuth();
+  const { user, userDoc, loading, needsOnboarding, completeOnboarding } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
@@ -106,7 +112,9 @@ function AuthContent() {
     if (!selectedRole || !user) return;
     setIsSaving(true);
     try {
-      await createUserDoc(user, selectedRole);
+      const newDoc = await createUserDoc(user, selectedRole);
+      // Update AuthContext immediately so AuthGuard doesn't bounce us back
+      completeOnboarding(newDoc);
       toast.success('Welcome to SevaSetu AI!');
       router.push('/dashboard');
     } catch (error) {
