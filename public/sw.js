@@ -1,5 +1,5 @@
 // Phase 2.3 Offline-first disaster mode
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 const CACHE_NAME = `sevasetu-v${CACHE_VERSION}-offline`;
 
 self.addEventListener('install', (event) => {
@@ -22,8 +22,10 @@ self.addEventListener('activate', (event) => {
           .filter((key) => key !== CACHE_NAME)
           .map((key) => caches.delete(key))
       )
-    ).then(() => self.clients.claim())
+    )
   );
+  // NOTE: no clients.claim() — let the SW take effect on next navigation,
+  // not mid-session (which breaks Firebase Auth popup flow).
 });
 
 self.addEventListener('fetch', (event) => {

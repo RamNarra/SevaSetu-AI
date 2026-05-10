@@ -69,8 +69,12 @@ function AuthContent() {
     }
   }, [user, userDoc, loading, showOnboarding, router]);
 
-  // Check for redirect result on page load (when signInWithRedirect was used)
+  // Check for redirect result only if a redirect actually happened (flag set before redirect)
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const didRedirect = sessionStorage.getItem('sevasetu_auth_redirect');
+    if (!didRedirect) return;
+    sessionStorage.removeItem('sevasetu_auth_redirect');
     checkRedirectResult().then((redirectUser) => {
       if (redirectUser) {
         getUserDoc(redirectUser.uid).then((existingDoc) => {

@@ -39,8 +39,11 @@ export async function signInWithGoogle(): Promise<User> {
       code === 'auth/popup-closed-by-user' ||
       code === 'auth/cancelled-popup-request'
     ) {
+      // Set flag so we know to call getRedirectResult on return
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('sevasetu_auth_redirect', '1');
+      }
       await signInWithRedirect(auth, googleProvider);
-      // This will redirect; the result is recovered via getRedirectResult below
       throw new Error('Redirecting to Google sign-in...');
     }
     throw err;

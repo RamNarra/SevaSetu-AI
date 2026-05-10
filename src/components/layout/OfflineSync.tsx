@@ -91,6 +91,11 @@ export default function OfflineSync() {
       return;
     }
 
+    // Don't register SW on auth pages — it interferes with popup sign-in
+    if (window.location.pathname.startsWith('/auth')) {
+      return;
+    }
+
     navigator.serviceWorker
       .register('/sw.js', {
         scope: '/',
